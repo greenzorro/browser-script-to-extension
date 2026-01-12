@@ -39,6 +39,3 @@ htmlcov/
 *.tmp
 temp/
 tmp/
-
-# Extension output (generated files)
-**/extension/
