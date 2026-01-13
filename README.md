@@ -27,7 +27,8 @@ Structure your project folder as follows:
 ├── script.js                # Your script with ==UserScript== metadata
 ├── store_assets/
 │   ├── icon.png             # Source icon (512x512+ recommended)
-│   └── screenshots/         # Folder with 1-5 screenshots
+│   ├── screenshot1.png      # Screenshot files (1-5 required)
+│   └── screenshot2.png      # Optional
 └── extension/               # Output directory (auto-generated)
 ```
 
@@ -50,6 +51,9 @@ python build.py /path/to/project_root --clean
 
 # Verbose logging
 python build.py /path/to/project_root --verbose
+
+# Build and package (creates ZIP and opens upload pages)
+python build.py /path/to/project_root --package
 ```
 
 ### Auto-Detection
@@ -98,7 +102,7 @@ Your script **must** include:
 
 Ensure `store_assets/` contains:
 - **`icon.png`**: Source icon. The tool generates 16, 48, and 128px versions automatically.
-- **`screenshots/`**: A folder containing 1 to 5 screenshots.
+- **Screenshot files**: 1 to 5 images in `.png` or `.jpg` format (placed directly in `store_assets/` directory).
 
 ## Output Structure
 
@@ -123,7 +127,7 @@ extension/
 
 ### Requirements
 - **Name:** Max 75 characters.
-- **Description:** Cannot be empty.
+- **Description:** Cannot be empty, max 132 characters.
 - **Screenshots:** 1-5 required.
 - **Version:** SemVer format (x.y.z) recommended.
 
@@ -131,6 +135,50 @@ extension/
 - Avoid `<all_urls>` permission if possible; specific patterns pass review faster.
 - Remote code (`@require`) must align with Store policies.
 - A one-time $5 developer registration fee applies.
+
+## Packaging
+
+### Quick Package
+
+The tool can automatically package your extension and open store upload pages:
+
+```bash
+python build.py /path/to/project_root --package
+```
+
+### Upload Configuration
+
+Create `store_assets/upload_config.json` in your project:
+
+```json
+{
+  "zip_filename": "My Extension",
+  "output_path": "~/Downloads",
+  "upload_urls": [
+    "https://chrome.google.com/webstore/devconsole/xxx/edit/package",
+    "https://partner.microsoft.com/.../packages"
+  ]
+}
+```
+
+**Field Reference:**
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `zip_filename` | Optional | ZIP filename (without .zip), defaults to script filename |
+| `output_path` | Optional | Output path (see path format below) |
+| `upload_urls` | Required | Array of upload page URLs |
+
+**Path Format:**
+- **Cross-platform recommended**: `~/Downloads` (expands to user home directory)
+- **Relative path**: `../releases`
+- **Absolute path**: Always use forward slashes `/`, works on Windows too (e.g., `C:/Users/xxx/Downloads`)
+- ❌ Don't use backslashes `\` (requires escaping in JSON, not cross-platform)
+
+**Default Behavior:**
+
+- Without config: Uses script filename for ZIP, outputs to project root, skips opening pages
+- WSL environment: Prints URLs instead of opening browser
 
 ## Troubleshooting
 

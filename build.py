@@ -17,51 +17,9 @@ from src.parser import UserScriptParser, UserScriptMetadata
 from src.manifest import ManifestV3Generator
 from src.converter import CodeConverter
 from src.fetcher import DependencyFetcher
-from utils.image import generate_icon_sizes, validate_store_assets
-
-
-def validate_store_readiness(metadata: UserScriptMetadata, script_dir: Path) -> None:
-    """
-    验证扩展是否满足Chrome Web Store上架要求
-
-    Args:
-        metadata: 脚本元数据
-        script_dir: 脚本目录
-
-    Raises:
-        RuntimeError: 如果不满足上架要求
-    """
-    logger = logging.getLogger(__name__)
-
-    # 检查1: 描述不能为空
-    if not metadata.description or metadata.description == "Unnamed Script":
-        raise RuntimeError(
-            "Description is required for Chrome Web Store. "
-            "Add @description in your userscript or in store listing."
-        )
-
-    # 检查2: 权限不能是<all_urls>，除非确实需要
-    if "<all_urls>" in metadata.match_patterns:
-        logger.warning(
-            "Chrome Web Store may reject extensions with '<all_urls>' permissions. "
-            "Use specific match patterns instead if possible."
-        )
-
-    # 检查3: 名称长度限制（75字符）
-    if len(metadata.name) > 75:
-        raise RuntimeError(
-            f"Extension name exceeds 75 characters (current: {len(metadata.name)}). "
-            "Chrome Web Store requires name <= 75 characters."
-        )
-
-    # 检查4: 版本号格式
-    import re
-
-    if not re.match(r"^\d+(\.\d+){0,3}$", metadata.version.lstrip("vV")):
-        logger.warning(
-            f"Version '{metadata.version}' may not follow Chrome Web Store format. "
-            "Recommended format: x.y.z (e.g., 1.0.0)"
-        )
+from src.validator import validate_store_readiness, validate_store_assets
+from src.packager import load_upload_config, package_extension, open_upload_pages
+from utils.image import generate_icon_sizes
 
 
 def setup_logging(verbose: bool = False):
@@ -98,7 +56,9 @@ def find_script_file(script_dir: Path) -> Path:
     return candidates[0]
 
 
-def build_script(script_dir: Path, clean: bool = False, verbose: bool = False) -> bool:
+def build_script(
+    script_dir: Path, clean: bool = False, verbose: bool = False, package: bool = False
+) -> bool:
     """
     构建单个脚本为浏览器扩展
 
@@ -106,6 +66,7 @@ def build_script(script_dir: Path, clean: bool = False, verbose: bool = False) -
         script_dir: 脚本目录路径
         clean: 是否清理输出目录后重新构建
         verbose: 是否显示详细日志
+        package: 是否打包并打开上传页面
 
     Returns:
         bool: 是否构建成功
@@ -178,6 +139,34 @@ def build_script(script_dir: Path, clean: bool = False, verbose: bool = False) -
         logger.info("Generated icons: 16x16, 48x48, 128x128")
 
         logger.info(f"✓ Extension built: {output_dir}")
+
+        # 打包逻辑
+        if package:
+            # 加载上传配置
+            config = load_upload_config(script_dir)
+
+            if config is None:
+                logger.warning(
+                    "No upload_config.json found in store_assets/. "
+                    "Will package with default settings and skip upload page opening. "
+                    "Create store_assets/upload_config.json to enable auto-opening."
+                )
+            elif "upload_urls" not in config:
+                logger.warning(
+                    "upload_config.json exists but missing 'upload_urls' field. "
+                    "Will package and skip upload page opening."
+                )
+                config = None  # 标记为无效配置
+
+            # 打包extension目录
+            zip_path = package_extension(
+                output_dir, script_path.name, config, script_dir
+            )
+
+            if zip_path and config:
+                # 打开上传页面
+                open_upload_pages(config)
+
         return True
 
     except Exception as e:
@@ -199,12 +188,18 @@ def main():
   python build.py /path/to/your/script-directory       # 构建单个脚本
   python build.py /path/to/your/script-directory --clean  # 清理后重建
   python build.py /path/to/your/script-directory -v       # 显示详细日志
+  python build.py /path/to/your/script-directory --package # 打包并打开上传页面
         """,
     )
 
     parser.add_argument("script_dir", type=Path, help="脚本目录路径（必需）")
     parser.add_argument("--clean", action="store_true", help="清理输出目录后重新构建")
     parser.add_argument("-v", "--verbose", action="store_true", help="显示详细日志")
+    parser.add_argument(
+        "--package",
+        action="store_true",
+        help="打包extension为ZIP并打开上传页面（需要在store_assets/upload_config.json中配置）",
+    )
 
     args = parser.parse_args()
 
@@ -212,7 +207,7 @@ def main():
     setup_logging(args.verbose)
 
     # 执行构建
-    success = build_script(args.script_dir, args.clean, args.verbose)
+    success = build_script(args.script_dir, args.clean, args.verbose, args.package)
     sys.exit(0 if success else 1)
 
 

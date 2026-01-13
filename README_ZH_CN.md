@@ -25,7 +25,8 @@ pip install -r requirements.txt
 ├── 你的脚本.js              # 包含 ==UserScript== 元数据的 JS 文件
 ├── store_assets/
 │   ├── icon.png             # 图标源文件（必需）
-│   └── screenshots/         # 截图目录（至少 1 张，最多 5 张）
+│   ├── screenshot1.png      # 截图文件（必需，至少1张，最多5张）
+│   └── screenshot2.png      # 可选
 └── extension/               # 输出目录（自动生成）
 ```
 
@@ -48,6 +49,9 @@ python build.py /path/to/your/script-directory --clean
 
 # 显示详细日志
 python build.py /path/to/your/script-directory --verbose
+
+# 构建并打包（生成ZIP并打开上传页面）
+python build.py /path/to/your/script-directory --package
 ```
 
 ### 自动检测脚本
@@ -97,7 +101,7 @@ python build.py /path/to/your/script-directory --verbose
 `store_assets/` 目录必须包含：
 
 - `icon.png`：图标源文件（必需，建议 512x512 或更高）
-- `screenshots/`：截图目录（必需，至少 1 张，最多 5 张）
+- 截图文件：至少 1 张，最多 5 张（支持 `.png` 或 `.jpg` 格式，直接放在 `store_assets/` 目录下）
 
 工具会自动从 `icon.png` 生成 16x16、48x48、128x128 三个尺寸的图标。
 
@@ -128,7 +132,7 @@ extension/
 ### 前置条件
 
 1. 扩展名称不超过 75 字符
-2. 描述非空
+2. 描述非空，且不超过 132 字符
 3. 至少 1 张截图，最多 5 张
 4. 版本号格式推荐使用 x.y.z
 
@@ -137,6 +141,50 @@ extension/
 - Chrome Web Store 可能会审查 `<all_urls>` 权限，建议使用具体的 `@match` 模式
 - 外部依赖（`@require`）必须符合 Chrome Web Store 政策
 - 首次上架需要支付 $5 注册费（一次性）
+
+## 打包发布
+
+### 快速打包
+
+工具可以自动将 `extension/` 目录打包成 ZIP 文件，并打开浏览器跳转到上传页面：
+
+```bash
+python build.py /path/to/your/script-directory --package
+```
+
+### 配置上传页面
+
+在 `store_assets/` 目录创建 `upload_config.json`：
+
+```json
+{
+  "zip_filename": "我的扩展",
+  "output_path": "~/Downloads",
+  "upload_urls": [
+    "https://chrome.google.com/webstore/devconsole/xxx/edit/package",
+    "https://partner.microsoft.com/.../packages"
+  ]
+}
+```
+
+**配置说明：**
+
+| 字段 | 必需 | 说明 |
+|------|------|------|
+| `zip_filename` | 可选 | ZIP 文件名（不含 .zip），默认与脚本文件同名 |
+| `output_path` | 可选 | 输出路径（见下方路径格式说明） |
+| `upload_urls` | 必需 | 上传页面 URL 数组 |
+
+**路径格式说明：**
+- **跨平台推荐**：`~/Downloads`（自动扩展为用户主目录）
+- **相对路径**：`../releases`
+- **绝对路径**：统一使用正斜杠 `/`，Windows 也支持（如 `C:/Users/xxx/Downloads`）
+- ❌ 不要使用反斜杠 `\`（JSON 中需要转义，且不跨平台）
+
+**默认行为：**
+
+- 无配置文件时：使用脚本文件名作为 ZIP 名，输出到项目根目录，不打开上传页面
+- WSL 环境：打印 URL，不自动打开浏览器
 
 ## 常见问题
 
