@@ -36,10 +36,12 @@ browser-script-to-extension/
 │   ├── parser.py             # UserScript元数据解析
 │   ├── manifest.py           # manifest.json生成器
 │   ├── converter.py          # 代码转换器（GM API polyfill）
-│   └── fetcher.py            # 外部依赖下载器
+│   ├── fetcher.py            # 外部依赖下载器
+│   ├── validator.py          # Chrome Web Store上架要求验证
+│   └── packager.py           # 打包发布功能
 └── utils/
     ├── __init__.py
-    └── image.py              # 图像处理 + Chrome Web Store材料验证
+    └── image.py              # 图像处理
 ```
 
 **用户脚本目录（用户提供）：**
@@ -48,7 +50,9 @@ browser-script-to-extension/
 ├── [任意文件名].js              # 包含 UserScript 元数据的JS文件（必需）
 ├── store_assets/                  # 商店上架素材（必需）
 │   ├── icon.png                  # 图标源文件（必需），用于生成 16x16、48x48、128x128 图标
-│   └── screenshots/              # 截图目录（必需，至少1张，最多5张）
+│   ├── screenshot1.png           # 截图文件（必需，至少1张，最多5张）
+│   ├── screenshot2.png           # 可选
+│   └── ...
 └── extension/                    # 输出目录（自动生成）
     ├── manifest.json
     ├── content.js
@@ -144,7 +148,7 @@ browser-script-to-extension/
 **商店材料验证：**
 检查 `store_assets/` 目录包含：
 - `icon.png`: 必需
-- `screenshots/`: 必需，至少 1 张，最多 5 张
+- 截图文件：至少 1 张 `*.png` 或 `*.jpg`，最多 5 张（直接放在 `store_assets/` 下）
 
 ## 6. 主入口 (`build.py`)
 
@@ -154,6 +158,7 @@ browser-script-to-extension/
 python build.py <script_dir>           # 处理单个脚本
 python build.py <script_dir> --clean   # 清理后重新构建
 python build.py <script_dir> --verbose # 显示详细日志
+python build.py <script_dir> --package # 构建并打包
 ```
 
 ### 6.2 UserScript 自动检测
@@ -169,9 +174,42 @@ python build.py <script_dir> --verbose # 显示详细日志
 
 **检查项目：**
 1. 描述非空：`@description` 不能为空
-2. 权限警告：`<all_urls>` in `match_patterns` 时记录警告
-3. 名称长度：`len(name) <= 75` 字符
-4. 版本号：建议使用 `x.y.z` 格式
+2. 描述长度：`len(description) <= 132` 字符（Chrome 硬性限制）
+3. 权限警告：`<all_urls>` in `match_patterns` 时记录警告
+4. 名称长度：`len(name) <= 75` 字符
+5. 版本号：建议使用 `x.y.z` 格式
+
+### 6.4 打包发布功能
+
+通过 `--package` 参数自动打包 `extension/` 目录并打开上传页面。
+
+**配置文件：** `store_assets/upload_config.json`
+
+```json
+{
+  "zip_filename": "自定义ZIP名称（可选）",
+  "output_path": "~/Downloads",
+  "upload_urls": [
+    "https://chrome.google.com/webstore/devconsole/xxx/edit/package",
+    "https://partner.microsoft.com/.../packages"
+  ]
+}
+```
+
+**路径格式注意：**
+- **跨平台推荐**：`~/Downloads`（自动扩展为用户主目录）
+- **相对路径**：`../releases`
+- **绝对路径**：统一使用正斜杠 `/`，Windows 也支持（如 `C:/Users/xxx/Downloads`）
+- ❌ 不要使用反斜杠 `\`（JSON 中需要转义，且不跨平台）
+
+**默认行为：**
+- ZIP 文件名：与脚本文件同名
+- ZIP 输出路径：项目根目录（与 `extension/` 同级）
+- 无配置时：只打包，不打开上传页面
+
+**平台检测：**
+- WSL 环境：打印 URL，不打开浏览器
+- macOS/Linux/Windows：自动打开浏览器
 
 ## 7. 关键技术决策
 
