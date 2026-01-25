@@ -1,5 +1,5 @@
 # 自动生成的依赖文件
-# Python环境: Routine (全局)
+# Python环境: 系统Python (Linux)
 # 扫描文件数: 2
 # 推荐使用 uv 进行包管理
 
