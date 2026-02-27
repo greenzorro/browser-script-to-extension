@@ -1,5 +1,5 @@
 # 自动生成的依赖文件
-# Python环境: 系统Python (Linux)
+# Python环境: projects
 # 扫描文件数: 2
 # 推荐使用 uv 进行包管理
 
