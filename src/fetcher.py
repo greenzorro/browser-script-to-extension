@@ -19,9 +19,11 @@ class DependencyFetcher:
         self.lib_dir = lib_dir
         self.timeout = timeout
         self.session = requests.Session()
-        self.session.headers.update({
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-        })
+        self.session.headers.update(
+            {
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+            }
+        )
 
     def fetch_all(self, urls: List[str]) -> List[str]:
         """下载所有外部依赖，返回文件名列表"""
@@ -31,7 +33,7 @@ class DependencyFetcher:
         # Chrome Web Store警告：检查是否使用了远程依赖
         logger.warning(
             "Chrome Web Store policy: All code must be included in the extension package. "
-            f"Downloading {len(urls)} remote dependenc{(y if len(urls) == 1 else 'ies')}. "
+            f"Downloading {len(urls)} remote dependenc{'y' if len(urls) == 1 else 'ies'}. "
             "Ensure these libraries comply with Chrome Web Store policies."
         )
 
@@ -53,11 +55,11 @@ class DependencyFetcher:
         """下载单个依赖，返回文件名"""
         # 解析URL获取文件名
         parsed = urlparse(url)
-        filename = parsed.path.split('/')[-1]
+        filename = parsed.path.split("/")[-1]
 
         # 如果没有扩展名，添加.js
-        if not filename.endswith('.js') and '.' not in filename:
-            filename += '.js'
+        if not filename.endswith(".js") and "." not in filename:
+            filename += ".js"
 
         output_path = self.lib_dir / filename
 
