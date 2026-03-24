@@ -197,4 +197,4 @@ Create `store_assets/upload_config.json` in your project:
 
 ---
 
-Created by [Victor42](https://victor42.work/)
+Created by [Victor42](https://victor42.work/) & [Agent Vik](https://github.com/agent-vik)
