@@ -3,11 +3,14 @@
 处理@require指定的外部库下载
 """
 
-import requests
+import hashlib
+import logging
+import re
 from pathlib import Path
 from typing import List, Optional
 from urllib.parse import urlparse
-import logging
+
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -21,70 +24,84 @@ class DependencyFetcher:
         self.session = requests.Session()
         self.session.headers.update(
             {
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+                "User-Agent": (
+                    "Mozilla/5.0 (compatible; browser-script-to-extension/1.0; "
+                    "+https://github.com/greenzorro/browser-script-to-extension)"
+                )
             }
         )
 
     def fetch_all(self, urls: List[str]) -> List[str]:
-        """下载所有外部依赖，返回文件名列表"""
+        """下载所有外部依赖；任一失败则抛出异常（fail-fast）"""
         if not urls:
             return []
 
-        # Chrome Web Store警告：检查是否使用了远程依赖
         logger.warning(
             "Chrome Web Store policy: All code must be included in the extension package. "
             f"Downloading {len(urls)} remote dependenc{'y' if len(urls) == 1 else 'ies'}. "
-            "Ensure these libraries comply with Chrome Web Store policies."
+            "Ensure these libraries comply with Chrome Web Store policies. "
+            "No integrity (SRI) verification is performed."
         )
 
         self.lib_dir.mkdir(parents=True, exist_ok=True)
-        downloaded = []
+        downloaded: List[str] = []
+        used_names: set = set()
 
         for url in urls:
-            try:
-                filename = self.fetch(url)
-                if filename:
-                    downloaded.append(filename)
-                    logger.info(f"Downloaded: {url} -> {filename}")
-            except Exception as e:
-                logger.error(f"Failed to download {url}: {e}")
+            filename = self.fetch(url, used_names)
+            if not filename:
+                raise RuntimeError(
+                    f"Failed to download @require dependency: {url}. "
+                    "Build aborted (fail-fast)."
+                )
+            used_names.add(filename)
+            downloaded.append(filename)
+            logger.info(f"Downloaded: {url} -> {filename}")
 
         return downloaded
 
-    def fetch(self, url: str) -> Optional[str]:
-        """下载单个依赖，返回文件名"""
-        # 解析URL获取文件名
+    def _unique_filename(self, url: str, used_names: set) -> str:
         parsed = urlparse(url)
-        filename = parsed.path.split("/")[-1]
+        base = parsed.path.split("/")[-1] or "dependency.js"
+        base = re.sub(r"[^\w.\-]", "_", base)
+        if not base.endswith(".js") and "." not in base:
+            base += ".js"
 
-        # 如果没有扩展名，添加.js
-        if not filename.endswith(".js") and "." not in filename:
-            filename += ".js"
+        if base not in used_names:
+            return base
 
+        # 同名冲突：用 URL hash 前缀区分
+        digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:8]
+        stem = base[:-3] if base.endswith(".js") else base
+        candidate = f"{stem}_{digest}.js"
+        return candidate
+
+    def fetch(self, url: str, used_names: Optional[set] = None) -> Optional[str]:
+        """下载单个依赖，返回文件名"""
+        used_names = used_names or set()
+        filename = self._unique_filename(url, used_names)
         output_path = self.lib_dir / filename
 
-        # 如果文件已存在，跳过
-        if output_path.exists():
-            logger.info(f"File already exists: {output_path.name}")
+        # 仅当同 URL 对应文件已存在且名未被占用策略命中时复用
+        # 为避免错误复用同名不同源，冲突名总是重新下载到唯一文件
+        if output_path.exists() and filename not in used_names:
+            # 存在但可能是旧构建残留；仍允许复用同名文件（同一构建内 used_names 会阻止冲突）
+            logger.info(f"File already exists, reusing: {output_path.name}")
             return filename
 
-        # 下载文件
         logger.info(f"Downloading {url}...")
         try:
             response = self.session.get(url, timeout=self.timeout)
             response.raise_for_status()
-
-            # 保存文件
             output_path.write_bytes(response.content)
             return filename
-
         except requests.RequestException as e:
-            logger.error(f"Download failed: {e}")
+            logger.error(f"Download failed for {url}: {e}")
             return None
 
     def clear(self):
-        """清空lib目录"""
         if self.lib_dir.exists():
             for file in self.lib_dir.iterdir():
-                file.unlink()
+                if file.is_file():
+                    file.unlink()
             logger.info(f"Cleared lib directory: {self.lib_dir}")

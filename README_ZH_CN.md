@@ -86,15 +86,19 @@ python build.py /path/to/your/script-directory --package
 
 ### 支持的 GM API
 
+同时支持 `GM_xxx` 与 `GM.xxx` 两种 `@grant` 写法（会自动归一化）。
+
 | GM API | 转换方式 |
 |--------|---------|
-| `GM_addStyle` | 创建 `<style>` 元素注入 |
-| `GM.setValue/getValue/deleteValue/listValues` | `chrome.storage.local` API |
-| `GM.xmlHttpRequest` | `fetch()` API 包装 |
-| `GM.notification` | `chrome.notifications.create()` |
-| `GM.setClipboard` | 临时 `<textarea>` + `execCommand('copy')` |
-| `GM.openInTab` | `chrome.tabs.create()` |
-| `GM.download` | `chrome.downloads.download()` |
+| `GM_addStyle` / `GM.addStyle` | 创建 `<style>` 元素注入 |
+| `GM.setValue/getValue/deleteValue/listValues` | `chrome.storage.local` |
+| `GM.xmlHttpRequest` | `fetch()` 包装（透传真实 status） |
+| `GM.notification` | 经 background service worker → `chrome.notifications` |
+| `GM.setClipboard` | `navigator.clipboard`（失败则 fallback） |
+| `GM.openInTab` | 经 background → `chrome.tabs.create` |
+| `GM.download` | 经 background → `chrome.downloads.download` |
+
+需要 `tabs` / `notifications` / `downloads` 时会自动生成 `background.js` 消息桥。
 
 ### 商店材料要求
 

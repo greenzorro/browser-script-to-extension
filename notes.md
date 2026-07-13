@@ -101,24 +101,23 @@ browser-script-to-extension/
 - 符合 Chrome 官方最佳实践
 - 减小 manifest.json 体积
 
-### 5.3 代码转换器 (`src/converter.py`)
+### 5.3 GM API 映射 (`src/gm_api.py`)
+
+统一 `GM_xxx` / `GM.xxx` grant 归一化、权限收集、`@connect` → host_permissions 转换。
+
+### 5.4 代码转换器 (`src/converter.py`)
 
 处理 UserScript 代码，注入 GM API polyfill。
 
-**GM API Polyfill 清单（11种）：**
-- `GM_addStyle`: 创建 `<style>` 元素注入
-- `GM.setValue/getValue/deleteValue/listValues`: `chrome.storage.local` API
-- `GM.xmlHttpRequest`: `fetch()` API 包装
-- `GM_notification`: `chrome.notifications.create()`
-- `GM.setClipboard`: 临时 `<textarea>` + `execCommand('copy')`
-- `GM.openInTab`: `chrome.tabs.create()`
-- `GM.download`: `chrome.downloads.download()`
+**GM API Polyfill：**
+- storage 类：content script 内直接调 `chrome.storage.local`
+- `GM_xmlHttpRequest`：`fetch`，透传真实 status / headers
+- `GM_openInTab` / `GM_notification` / `GM_download`：content → `runtime.sendMessage` → `background.js`
 
 **转换流程：**
-1. 分析 `@grant` 元数据，确定需要哪些 API
-2. 为每个需要的 API 生成对应的 polyfill 代码
-3. 将 polyfill 包装在 IIFE 中
-4. 将原始代码追加在 polyfill 之后
+1. 归一化 `@grant`，确定需要的 API
+2. 生成 polyfill + `GM_xxx`/`GM.xxx` 双向别名
+3. 需要时写出 `background.js` 服务工作线程
 
 ### 5.4 依赖下载器 (`src/fetcher.py`)
 

@@ -4,32 +4,28 @@
 """
 
 import logging
+import re
 from pathlib import Path
 
 from src.parser import UserScriptMetadata
+from src.gm_api import connect_to_host_permission
 
 
 def validate_store_readiness(metadata: UserScriptMetadata, script_dir: Path) -> None:
     """
     验证扩展是否满足Chrome Web Store上架要求
 
-    Args:
-        metadata: 脚本元数据
-        script_dir: 脚本目录
-
     Raises:
         RuntimeError: 如果不满足上架要求
     """
     logger = logging.getLogger(__name__)
 
-    # 检查1: 描述不能为空
-    if not metadata.description or metadata.description == "Unnamed Script":
+    if not metadata.description or not metadata.description.strip():
         raise RuntimeError(
             "Description is required for Chrome Web Store. "
-            "Add @description in your userscript or in store listing."
+            "Add @description in your userscript."
         )
 
-    # 检查2: 描述长度限制（132字符）
     if len(metadata.description) > 132:
         raise RuntimeError(
             f"Description exceeds 132 characters (current: {len(metadata.description)}). "
@@ -37,27 +33,45 @@ def validate_store_readiness(metadata: UserScriptMetadata, script_dir: Path) -> 
             "Please shorten your @description in the userscript."
         )
 
-    # 检查3: 权限不能是<all_urls>，除非确实需要
-    if "<all_urls>" in metadata.match_patterns:
-        logger.warning(
-            "Chrome Web Store may reject extensions with '<all_urls>' permissions. "
-            "Use specific match patterns instead if possible."
+    if not metadata.match_patterns:
+        raise RuntimeError(
+            "At least one @match or @include pattern is required. "
+            "Refusing to default to <all_urls> for Chrome Web Store safety."
         )
 
-    # 检查4: 名称长度限制（75字符）
+    if "<all_urls>" in metadata.match_patterns or any(
+        p in ("*://*/*", "http://*/*", "https://*/*") for p in metadata.match_patterns
+    ):
+        logger.warning(
+            "Broad match patterns (<all_urls> / *://*/*) may cause Chrome Web Store "
+            "review friction. Prefer specific host patterns when possible."
+        )
+
     if len(metadata.name) > 75:
         raise RuntimeError(
             f"Extension name exceeds 75 characters (current: {len(metadata.name)}). "
             "Chrome Web Store requires name <= 75 characters."
         )
 
-    # 检查5: 版本号格式
-    import re
-
-    if not re.match(r"^\d+(\.\d+){0,3}$", metadata.version.lstrip("vV")):
+    version_core = metadata.version.lstrip("vV").split("-")[0].split("+")[0]
+    if not re.match(r"^\d+(\.\d+){0,3}$", version_core):
         logger.warning(
             f"Version '{metadata.version}' may not follow Chrome Web Store format. "
             "Recommended format: x.y.z (e.g., 1.0.0)"
+        )
+
+    # @connect 可转换性检查
+    for connect in metadata.connect_urls:
+        if connect_to_host_permission(connect) is None:
+            logger.warning(
+                f"@connect value '{connect}' could not be converted to a valid "
+                "Chrome host_permissions pattern and will be skipped."
+            )
+
+    if metadata.resource_urls:
+        logger.warning(
+            f"@resource is declared ({len(metadata.resource_urls)} entries) but not "
+            "bundled yet. GM_getResourceText/URL will not work until resources are packaged."
         )
 
 
@@ -67,43 +81,41 @@ def validate_store_assets(script_dir: Path) -> dict:
 
     store_assets 目录必须包含：
     - icon.png: 图标源文件（必需）
-    - 至少1张截图文件：*.png 或 *.jpg（必需，最多5张）
-
-    Args:
-        script_dir: 脚本目录路径
-
-    Returns:
-        dict: 包含 'has_icon' 和 'screenshot_count' 的字典
-
-    Raises:
-        RuntimeError: 如果缺少必需材料
+    - 至少1张截图文件：*.png 或 *.jpg（必需，最多5张，不含 icon.png）
     """
     logger = logging.getLogger(__name__)
 
     config_dir = script_dir / "store_assets"
     icon_path = config_dir / "icon.png"
 
-    # store_assets 目录必须存在
     if not config_dir.exists():
         raise RuntimeError(
-            f"store_assets directory is required for Chrome Web Store submission. "
-            f"Create it with: 1) icon.png (required) 2) at least 1 screenshot *.png or *.jpg (required)"
+            "store_assets directory is required for Chrome Web Store submission. "
+            "Create it with: 1) icon.png (required) 2) at least 1 screenshot "
+            "*.png or *.jpg (required, not counting icon.png)"
         )
 
-    # 检查图标
     if not icon_path.exists():
         raise RuntimeError(
-            f"icon.png not found in store_assets/. "
-            f"This is required for Chrome Web Store submission."
+            "icon.png not found in store_assets/. "
+            "This is required for Chrome Web Store submission."
         )
 
-    # 检查截图（直接在 store_assets 目录下）
-    screenshot_files = list(config_dir.glob("*.png")) + list(config_dir.glob("*.jpg"))
+    screenshot_files = []
+    for pattern in ("*.png", "*.jpg", "*.jpeg"):
+        for path in config_dir.glob(pattern):
+            if path.name.lower() == "icon.png":
+                continue
+            screenshot_files.append(path)
+
+    # 去重（大小写不同扩展名等）
+    unique = {p.resolve(): p for p in screenshot_files}
+    screenshot_files = list(unique.values())
 
     if len(screenshot_files) == 0:
         raise RuntimeError(
-            f"No screenshots found in store_assets/. "
-            f"At least 1 screenshot (*.png or *.jpg) is required for Chrome Web Store submission."
+            "No screenshots found in store_assets/ (icon.png does not count). "
+            "At least 1 screenshot (*.png / *.jpg) is required for Chrome Web Store submission."
         )
 
     if len(screenshot_files) > 5:

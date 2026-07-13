@@ -88,15 +88,19 @@ Your script **must** include:
 
 ### Supported GM APIs
 
+Both `GM_xxx` and `GM.xxx` `@grant` styles are accepted and normalized.
+
 | GM API | Polyfill Strategy |
 |--------|-------------------|
-| `GM_addStyle` | Injects `<style>` tag |
+| `GM_addStyle` / `GM.addStyle` | Injects `<style>` tag |
 | `GM.setValue` / `getValue` ... | Maps to `chrome.storage.local` |
-| `GM.xmlHttpRequest` | Wrapper around `fetch()` |
-| `GM.notification` | Maps to `chrome.notifications.create` |
-| `GM.setClipboard` | Temporary textarea + `execCommand` |
-| `GM.openInTab` | Maps to `chrome.tabs.create` |
-| `GM.download` | Maps to `chrome.downloads.download` |
+| `GM.xmlHttpRequest` | Wrapper around `fetch()` (real HTTP status) |
+| `GM.notification` | Via background service worker → `chrome.notifications` |
+| `GM.setClipboard` | `navigator.clipboard` with fallback |
+| `GM.openInTab` | Via background → `chrome.tabs.create` |
+| `GM.download` | Via background → `chrome.downloads.download` |
+
+A `background.js` message bridge is generated when tabs/notifications/downloads are required.
 
 ### Asset Requirements
 
