@@ -9,9 +9,10 @@ from dataclasses import dataclass
 from typing import Dict, Iterable, List, Set, Tuple
 
 
-# 需要 background service worker 转发的 API
+# 需要 background service worker 转发的 API（与 GmApiSpec.needs_background 保持一致）
 BACKGROUND_APIS = frozenset(
     {
+        "GM_xmlHttpRequest",
         "GM_openInTab",
         "GM_notification",
         "GM_download",
@@ -38,7 +39,9 @@ _API_SPECS: Dict[str, GmApiSpec] = {
     "GM_deleteValue": GmApiSpec("GM_deleteValue", permissions=("storage",)),
     "GM_listValues": GmApiSpec("GM_listValues", permissions=("storage",)),
     "GM_xmlHttpRequest": GmApiSpec(
-        "GM_xmlHttpRequest", host_permissions=("<all_urls>",)
+        "GM_xmlHttpRequest",
+        host_permissions=("<all_urls>",),
+        needs_background=True,
     ),
     "GM_notification": GmApiSpec(
         "GM_notification",

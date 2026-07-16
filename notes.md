@@ -2,288 +2,237 @@
 
 ## 1. 目的
 
-本文档旨在记录 `browser-script-to-extension` 项目的实现细节和架构决策，为本项目的未来开发和维护提供便利。
-
-**重要提示：** 每次新增或修改功能后，请务必更新此备忘录，确保文档的准确性和时效性。
+记录实现细节与架构决策，便于维护。功能变更时同步更新本文档。
 
 ## 2. 项目概述
 
-本项目是一个Python工具，自动将 Tampermonkey userscript 转换为 Chrome Extension Manifest V3 格式的浏览器扩展。
+将 Tampermonkey / GreaseMonkey userscript 转为 Chrome Extension Manifest V3。
+
+**定位：** Chrome Web Store **打包流水线**（元数据 → manifest、素材校验、依赖内联、ZIP 发布），附带尽力而为的 GM API polyfill。不是完整 TM 运行时仿真。
 
 **核心价值：**
-- 降低使用门槛：用户直接从 Chrome Web Store 安装，无需了解 Tampermonkey
-- 利用浏览器应用商店生态：发现机制、信任体系、自动更新
-- 拓展推广渠道：跨平台分发、可追踪数据、借助全球化网络
+- 降低使用门槛：用户从 Web Store 安装，无需 Tampermonkey
+- 利用商店生态：发现、信任、自动更新
+- 拓展分发渠道
+
+**推荐脚本形态：** `@grant none` + DOM / `localStorage`（与扩展 content script 模型最接近）。
 
 ## 3. 技术栈
 
-- **Python 3.12+**: 主要开发语言
-- **dataclasses**: 元数据结构定义
-- **re**: UserScript 元数据块解析
-- **json**: manifest.json 生成
-- **requests**: 外部依赖下载
-- **Pillow (PIL)**: 图像处理，图标尺寸转换
+- **Python 3.12+**
+- **dataclasses** / **re** / **json**
+- **requests**：`@require` 下载
+- **Pillow**：图标尺寸
 
 ## 4. 目录结构
 
 ```
 browser-script-to-extension/
-├── build.py                  # 主入口脚本
-├── plan.md                   # 实现计划
-├── .gitignore                # Git忽略文件
-├── src/                      # 核心模块
+├── build.py                  # 主入口
+├── notes.md                  # 本备忘录
+├── README.md / README_ZH_CN.md
+├── requirements.txt
+├── src/
 │   ├── __init__.py
-│   ├── parser.py             # UserScript元数据解析
-│   ├── manifest.py           # manifest.json生成器
-│   ├── converter.py          # 代码转换器（GM API polyfill）
-│   ├── fetcher.py            # 外部依赖下载器
-│   ├── validator.py          # Chrome Web Store上架要求验证
-│   └── packager.py           # 打包发布功能
+│   ├── parser.py             # UserScript 元数据解析
+│   ├── gm_api.py             # grant 归一化与权限映射
+│   ├── manifest.py           # manifest.json 生成
+│   ├── converter.py          # GM polyfill + background 桥
+│   ├── fetcher.py            # @require 下载
+│   ├── validator.py          # 上架校验
+│   └── packager.py           # ZIP / 打开上传页
 └── utils/
     ├── __init__.py
-    └── image.py              # 图像处理
+    └── image.py              # 图标多尺寸
 ```
 
-**用户脚本目录（用户提供）：**
+**用户脚本目录：**
 ```
-[path/to/your/script-directory]
-├── [任意文件名].js              # 包含 UserScript 元数据的JS文件（必需）
-├── store_assets/                  # 商店上架素材（必需）
-│   ├── icon.png                  # 图标源文件（必需），用于生成 16x16、48x48、128x128 图标
-│   ├── screenshot1.png           # 截图文件（必需，至少1张，最多5张）
-│   ├── screenshot2.png           # 可选
-│   └── ...
-└── extension/                    # 输出目录（自动生成）
+[path/to/script-directory]
+├── [任意名].js                 # ==UserScript== 元数据
+├── store_assets/
+│   ├── icon.png               # 必需
+│   ├── screenshot*.png|jpg    # 至少 1 张，最多 5 张
+│   └── upload_config.json     # 可选，--package 用
+└── extension/                 # 构建输出
     ├── manifest.json
     ├── content.js
-    ├── icons/                    # 16x16, 48x48, 128x128
-    └── lib/                      # @require依赖
+    ├── background.js          # 按需
+    ├── icons/
+    └── lib/                   # @require
 ```
 
 ## 5. 核心模块
 
 ### 5.1 元数据解析器 (`src/parser.py`)
 
-解析 Tampermonkey/GreaseMonkey 脚本的 `==UserScript==` 元数据块。
-
-**正则表达式提取：**
 - 元数据块：`// ==UserScript==\n(.*?)// ==/UserScript==`
 - 元数据行：`// @(\S+)\s+(.+)`
+- 多值：`@match` / `@include`、`@grant`、`@require`、`@connect`、`@exclude`、`@resource`
+- 默认：`version=1.0.0`，`description=""`，`license=MIT`，`run_at=document-end`，`execution_world=ISOLATED`
 
-**支持的多值属性：**
-- `@match`: 多个匹配模式
-- `@grant`: 多个权限声明
-- `@require`: 多个外部依赖
+**执行世界：**
+| 元数据 | 结果 |
+|--------|------|
+| 默认 / `@world ISOLATED` / `@inject-into content` | `ISOLATED` |
+| `@world MAIN` / `@inject-into page` | `MAIN` |
+| `@inject-into auto` | `ISOLATED`（保守） |
 
-**默认值处理：**
-- `version`: "1.0.0"
-- `description`: "" (空字符串，需在 Web Store 上架时补充)
-- `license`: "MIT"
+`MAIN` 可访问页面 JS 对象（如 `element.CodeMirror`）；不可用 `chrome.*` / 依赖扩展 API 的 GM polyfill。
 
-### 5.2 Manifest V3 生成器 (`src/manifest.py`)
+### 5.2 Manifest V3 (`src/manifest.py`)
 
-将 UserScript 元数据转换为 Chrome Extension Manifest V3 格式。
+| GM API | Chrome |
+|--------|--------|
+| `GM_addStyle` | 无额外权限 |
+| storage 系 | `permissions: ["storage"]` |
+| `GM_xmlHttpRequest` | `host_permissions`（含 `<all_urls>`）+ background |
+| `GM_notification` | `notifications` + background |
+| `GM_setClipboard` | `clipboardWrite` |
+| `GM_openInTab` | `tabs` + background |
+| `GM_download` | `downloads` + host + background |
 
-**GM API 到 Chrome 权限的映射：**
-
-| GM API | Chrome API |
-|--------|------------|
-| `GM_addStyle` | 无需特殊权限 |
-| `GM.setValue/getValue/deleteValue/listValues` | `permissions: ["storage"]` |
-| `GM_xmlHttpRequest` | `host_permissions: ["<all_urls>"]` |
-| `GM_notification` | `permissions: ["notifications"]` |
-| `GM.setClipboard` | `permissions: ["clipboardWrite"]` |
-| `GM.openInTab` | `permissions: ["tabs"]` |
-| `GM_download` | `permissions: ["downloads"]` + `host_permissions: ["<all_urls>"]` |
-
-**Manifest 优化策略：**
-- 省略空的 `permissions` 和 `host_permissions` 数组
-- 符合 Chrome 官方最佳实践
-- 减小 manifest.json 体积
+- 空 `permissions` / `host_permissions` 省略
+- 无 `@match`/`@include` 时拒绝构建（不默认 `<all_urls>`）
+- `execution_world=MAIN` 时写入 `content_scripts[].world`
+- `@exclude` → `exclude_matches`
 
 ### 5.3 GM API 映射 (`src/gm_api.py`)
 
-统一 `GM_xxx` / `GM.xxx` grant 归一化、权限收集、`@connect` → host_permissions 转换。
+- `GM_xxx` / `GM.xxx` / 少数 `GMXxx` 归一为 canonical 下划线名
+- 权限与 host 从 `_API_SPECS` 收集
+- `@connect` → host_permissions 模式
+
+**走 background 的 API：** `GM_xmlHttpRequest`、`GM_openInTab`、`GM_notification`、`GM_download`。
+
+MV3 下 content script 的网络请求仍受页面 CORS 约束；特权跨域只在 extension page / service worker 中可用，故 XHR 与 tabs/notifications/downloads 一样经消息桥转发。
 
 ### 5.4 代码转换器 (`src/converter.py`)
 
-处理 UserScript 代码，注入 GM API polyfill。
+- storage：`chrome.storage.local`，**Promise 异步**（对齐 GM4 `GM.*`）
+- XHR / openInTab / notification / download：content → `runtime.sendMessage` → `background.js`
+- 双向别名 `GM_xxx` ↔ `GM.xxx`
+- XHR 支持 `timeout`；one-shot 消息下 `abort` 为空操作；无二进制 `responseType`
 
-**GM API Polyfill：**
-- storage 类：content script 内直接调 `chrome.storage.local`
-- `GM_xmlHttpRequest`：`fetch`，透传真实 status / headers
-- `GM_openInTab` / `GM_notification` / `GM_download`：content → `runtime.sendMessage` → `background.js`
+### 5.5 依赖下载 (`src/fetcher.py`)
 
-**转换流程：**
-1. 归一化 `@grant`，确定需要的 API
-2. 生成 polyfill + `GM_xxx`/`GM.xxx` 双向别名
-3. 需要时写出 `background.js` 服务工作线程
+1. 从 URL 取文件名，冲突时 hash 后缀
+2. 已存在则复用
+3. `requests` 下载到 `extension/lib/`
+4. 失败 fail-fast
+5. 日志提示商店政策与无 SRI
 
-### 5.4 依赖下载器 (`src/fetcher.py`)
+### 5.6 校验 (`src/validator.py`)
 
-下载 `@require` 指定的外部 JavaScript 库到本地。
+- description 非空且 ≤132；name ≤75
+- 至少一个 match；宽泛 match 警告
+- 版本格式建议 x.y.z
+- `@connect` 无法转换时警告
+- `@resource` 未打包时警告
+- `MAIN` + GM grant 时警告
+- `store_assets`：icon.png + ≥1 截图
 
-**处理逻辑：**
-1. 解析 URL 获取文件名
-2. 检查本地是否已存在
-3. 使用 `requests` 下载文件
-4. 保存到 `extension/lib/` 目录
-5. 在 manifest 中添加到 `content_scripts.js` 列表
+### 5.7 图像 (`utils/image.py`)
 
-**错误处理：**
-- 网络超时：默认 30 秒
-- User-Agent 模拟浏览器请求
-- Chrome Web Store 警告：远程代码需符合商店政策
+源 `icon.png` → 16 / 48 / 128（LANCZOS）。
 
-### 5.5 图像处理工具 (`utils/image.py`)
+### 5.8 打包 (`src/packager.py`)
 
-图标生成和 Chrome Web Store 材料验证。
-
-**图标生成：**
-- 输入：单一源图标（推荐 512x512 或更高）
-- 输出：三种标准尺寸 `16x16`、`48x48`、`128x128`
-- 算法：`PIL.Image.resize()` + `Image.Resampling.LANCZOS`
-
-**商店材料验证：**
-检查 `store_assets/` 目录包含：
-- `icon.png`: 必需
-- 截图文件：至少 1 张 `*.png` 或 `*.jpg`，最多 5 张（直接放在 `store_assets/` 下）
+ZIP、`upload_config.json`、WSL 下只打印 URL、素材拷到 `~/Downloads/<name>_assets/`。
 
 ## 6. 主入口 (`build.py`)
 
-### 6.1 命令行接口
-
 ```bash
-python build.py <script_dir>           # 处理单个脚本
-python build.py <script_dir> --clean   # 清理后重新构建
-python build.py <script_dir> --verbose # 显示详细日志
-python build.py <script_dir> --package # 构建并打包
+python build.py <script_dir>
+python build.py <script_dir> --clean
+python build.py <script_dir> --verbose
+python build.py <script_dir> --package
 ```
 
-### 6.2 UserScript 自动检测
-
-扫描指定目录下所有 `.js` 文件，检测 `// ==UserScript==` 和 `// ==/UserScript==` 特征。
-
-**查找逻辑：**
-- 找到 0 个：抛出 `FileNotFoundError`
-- 找到 1 个：使用该文件
-- 找到多个：抛出 `ValueError`，列出所有候选文件名
-
-### 6.3 Chrome Web Store 上架要求验证
-
-**检查项目：**
-1. 描述非空：`@description` 不能为空
-2. 描述长度：`len(description) <= 132` 字符（Chrome 硬性限制）
-3. 权限警告：`<all_urls>` in `match_patterns` 时记录警告
-4. 名称长度：`len(name) <= 75` 字符
-5. 版本号：建议使用 `x.y.z` 格式
-
-### 6.4 打包发布功能
-
-通过 `--package` 参数自动打包 `extension/` 目录并打开上传页面。
-
-**配置文件：** `store_assets/upload_config.json`
-
-```json
-{
-  "zip_filename": "自定义ZIP名称（可选）",
-  "output_path": "~/Downloads",
-  "upload_urls": [
-    "https://chrome.google.com/webstore/devconsole/xxx/edit/package",
-    "https://partner.microsoft.com/.../packages"
-  ]
-}
-```
-
-**路径格式注意：**
-- **跨平台推荐**：`~/Downloads`（自动扩展为用户主目录）
-- **相对路径**：`../releases`
-- **绝对路径**：统一使用正斜杠 `/`，Windows 也支持（如 `C:/Users/xxx/Downloads`）
-- ❌ 不要使用反斜杠 `\`（JSON 中需要转义，且不跨平台）
-
-**默认行为：**
-- ZIP 文件名：与脚本文件同名
-- ZIP 输出路径：项目根目录（与 `extension/` 同级）
-- 无配置时：只打包，不打开上传页面
-
-**平台检测：**
-- WSL 环境：打印 URL，不打开浏览器
-- macOS/Linux/Windows：自动打开浏览器
+**脚本发现：** 扫描目录下 `.js`，含完整 UserScript 头尾即候选。
+- 0 个：`FileNotFoundError`（附带各文件跳过原因：无元数据 / 读失败）
+- 1 个：采用
+- 多个：`ValueError` 列出文件名
 
 ## 7. 关键技术决策
 
-### 7.1 UserScript 查找策略
+### 7.1 按内容找脚本，不约定文件名
 
-扫描目录检测 `==UserScript==` 特征，而非依赖文件名约定。
+任意 `.js` 名；以元数据块为准。
 
-**理由：**
-- 更灵活：支持任意文件名
-- 更可靠：基于实际文件内容判断
-- 符合使用习惯
+### 7.2 Polyfill 内嵌在 converter
 
-### 7.2 GM API Polyfill 设计
+单文件逻辑、无额外 polyfill 资源包。
 
-将所有 polyfill 代码内嵌在 `converter.py` 中。
+### 7.3 省略空权限数组
 
-**理由：**
-- 简化部署：单个文件包含所有逻辑
-- 避免外部依赖：polyfill 代码不单独打包
-- 易于维护
+符合 Chrome 实践、减小 manifest。
 
-### 7.3 Manifest 权限管理
+### 7.4 `store_assets/` 命名
 
-省略空的 `permissions` 和 `host_permissions` 数组。
+直接表达商店素材用途。
 
-**理由：**
-- 符合 Chrome 官方最佳实践
-- 减小 manifest.json 体积
+### 7.5 不默认 `<all_urls>` match
 
-### 7.4 商店素材目录命名
+过审与最小权限；宽泛 match 仅警告。
 
-使用 `store_assets/` 而非 `to_extension_config/`。
+### 7.6 特权网络与标签类 API 统一走 background
 
-**理由：**
-- 更明确：名称直接反映"商店素材"
-- 更通用：未来支持其他商店时仍适用
-- 更简洁
+与 MV3 安全模型一致；content 侧只做消息转发。
 
-## 8. 测试状态
+### 7.7 Storage 采用异步契约
 
-| 测试项目 | 状态 |
-|----------|------|
-| 转换流程 | ✅ 已验证 |
-| Chrome 加载 | ✅ 本地安装测试通过，功能正常 |
-| Manifest V3 合规 | ✅ 符合 Chrome 官方文档标准 |
+`chrome.storage` 天然异步；对外统一 Promise，文档要求 `await` / `.then`。需要同步状态时用 `@grant none` + `localStorage`。
 
-## 9. 依赖管理
+### 7.8 可选 MAIN world
 
-**依赖库：**
+页面 JS 对象与扩展隔离世界不可见；`@inject-into page` / `@world MAIN` 写入 `content_scripts.world`。与 GM/`chrome.*` 互斥，由校验警告。
+
+## 8. 能力边界（产品契约）
+
+| 支持 | 说明 |
+|------|------|
+| 主路径 | `@grant none` + DOM / localStorage |
+| GM polyfill | 见 README 表；尽力兼容 |
+| 页面 JS | `@inject-into page` / `@world MAIN` |
+| `@require` | 下载进包 |
+| 上架流水线 | 校验、图标、ZIP、upload 页 |
+
+| 不支持或有限 | 说明 |
+|--------------|------|
+| 同步 `GM_getValue` 等 | 仅异步 |
+| `unsafeWindow` | 无 polyfill；用 MAIN world 替代部分场景 |
+| `@resource` / `GM_getResource*` | 仅警告 |
+| XHR abort / 二进制 responseType | 有限 |
+| include 冷门 glob | 直接写入 match，调用方需自洽 |
+
+## 9. 测试状态
+
+| 项目 | 状态 |
+|------|------|
+| 转换流程 | 已验证 |
+| 本地加载 | 已验证 |
+| Manifest V3 | 符合官方结构 |
+
+## 10. 依赖
+
 ```
-requests>=2.31.0   # HTTP请求
-Pillow>=10.0.0     # 图像处理
+requests>=2.31.0
+Pillow>=10.0.0
 ```
 
-## 10. 故障排查
+## 11. 故障排查
 
-### 10.1 常见问题
+**找不到 UserScript**
+- 路径、UTF-8、`// ==UserScript==` 块；看错误中的 Inspected 明细
 
-**找不到 UserScript 文件**
-- 检查目录路径是否正确
-- 确认 `.js` 文件包含 `// ==UserScript==` 块
-- 确认文件编码为 UTF-8
-
-**图标生成失败**
-- 检查是否安装 Pillow：`pip install Pillow`
-- 确认 `store_assets/icon.png` 文件存在
+**图标失败**
+- `pip install Pillow`；存在 `store_assets/icon.png`
 
 **依赖下载失败**
-- 检查网络连接
-- 确认 `@require` URL 可访问
+- 网络与 `@require` URL
 
-### 10.2 调试技巧
-
-**启用详细日志：**
+**详细日志**
 ```bash
 python build.py /path/to/script --verbose
 ```
-

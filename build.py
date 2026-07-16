@@ -34,18 +34,28 @@ def setup_logging(verbose: bool = False):
 
 def find_script_file(script_dir: Path) -> Path:
     """扫描目录下所有.js文件，找到包含UserScript特征的那个"""
+    logger = logging.getLogger(__name__)
     candidates = []
+    skipped = []
 
     for js_file in script_dir.glob("*.js"):
         try:
             content = js_file.read_text(encoding="utf-8")
             if "// ==UserScript==" in content and "// ==/UserScript==" in content:
                 candidates.append(js_file)
-        except Exception:
-            pass
+            else:
+                skipped.append(f"{js_file.name}: no UserScript metadata block")
+        except Exception as e:
+            skipped.append(f"{js_file.name}: {type(e).__name__}: {e}")
+            logger.warning(f"Skipped unreadable JS file {js_file.name}: {e}")
 
     if len(candidates) == 0:
-        raise FileNotFoundError(f"No UserScript found in directory: {script_dir}")
+        detail = ""
+        if skipped:
+            detail = " Inspected: " + "; ".join(skipped)
+        raise FileNotFoundError(
+            f"No UserScript found in directory: {script_dir}.{detail}"
+        )
     if len(candidates) > 1:
         names = ", ".join([c.name for c in candidates])
         raise ValueError(
@@ -71,6 +81,7 @@ def build_script(
         logger.info(f"Parsed: {metadata.name} v{metadata.version}")
         logger.info(f"Grants (normalized): {metadata.grant_permissions}")
         logger.info(f"Match patterns: {metadata.match_patterns}")
+        logger.info(f"Execution world: {metadata.execution_world}")
 
         validate_store_readiness(metadata, script_dir)
 

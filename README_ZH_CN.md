@@ -83,6 +83,41 @@ python build.py /path/to/your/script-directory --package
 - `@grant`：GM API 权限声明（默认 `none`，使用 GM API 时需要）
 - `@require`：外部 JS 库依赖（可选）
 - `@run-at`：运行时机（可选，默认 `document-end`）
+- `@inject-into` / `@world`：执行世界（见下方）
+
+### 能力模型
+
+本工具是 **Chrome Web Store 打包流水线**，并提供尽力而为的 GM polyfill，不是完整 Tampermonkey 运行时。
+
+| 路径 | 适用 | 说明 |
+|------|------|------|
+| **推荐主路径** | `@grant none` + DOM / `localStorage` | 与扩展 content script 最接近 |
+| GM polyfill | `@grant GM.*` | 尽力兼容，见下表 |
+| 页面 JS 对象 | CodeMirror、`window.App` 等 | `@inject-into page` 或 `@world MAIN` |
+
+**执行世界**
+
+| 元数据 | Chrome `content_scripts.world` | 何时使用 |
+|--------|--------------------------------|----------|
+| 默认 / `@inject-into content` / `@world ISOLATED` | `ISOLATED` | `chrome.*` / GM polyfill |
+| `@inject-into page` / `@world MAIN` | `MAIN` | 页面 JS 对象（如 `element.CodeMirror`） |
+
+`MAIN` 中不可用 `chrome.*`。不要与依赖 storage / tabs / XHR 的 GM grant 混用。
+
+**Storage 语义**
+
+`GM_setValue` / `GM_getValue` / `GM.deleteValue` / `GM.listValues` 返回 **Promise**（GM4 / `chrome.storage.local` 风格）：
+
+```js
+// 不支持（同步）
+const x = GM_getValue('k', 0);
+
+// 支持
+const x = await GM_getValue('k', 0);
+// 或: GM_getValue('k', 0).then(...)
+```
+
+需要同步状态时使用 `@grant none` + `localStorage`。
 
 ### 支持的 GM API
 
@@ -91,14 +126,16 @@ python build.py /path/to/your/script-directory --package
 | GM API | 转换方式 |
 |--------|---------|
 | `GM_addStyle` / `GM.addStyle` | 创建 `<style>` 元素注入 |
-| `GM.setValue/getValue/deleteValue/listValues` | `chrome.storage.local` |
-| `GM.xmlHttpRequest` | `fetch()` 包装（透传真实 status） |
-| `GM.notification` | 经 background service worker → `chrome.notifications` |
+| `GM.setValue/getValue/deleteValue/listValues` | **异步** `chrome.storage.local`（Promise） |
+| `GM.xmlHttpRequest` | 经 background service worker → `fetch()`（配合 `host_permissions` / `@connect` 实现跨域） |
+| `GM.notification` | 经 background → `chrome.notifications` |
 | `GM.setClipboard` | `navigator.clipboard`（失败则 fallback） |
 | `GM.openInTab` | 经 background → `chrome.tabs.create` |
 | `GM.download` | 经 background → `chrome.downloads.download` |
 
-需要 `tabs` / `notifications` / `downloads` 时会自动生成 `background.js` 消息桥。
+需要 XHR / `tabs` / `notifications` / `downloads` 时会自动生成 `background.js` 消息桥。
+
+未支持（或仅 warning）：`unsafeWindow`、`@resource` / `GM_getResource*`、同步 `GM_getValue`、二进制 XHR `responseType`、跨上下文 XHR abort。
 
 ### 商店材料要求
 
@@ -197,6 +234,7 @@ python build.py /path/to/your/script-directory --package
 - 检查目录路径是否正确
 - 确认 `.js` 文件包含 `// ==UserScript==` 块
 - 确认文件编码为 UTF-8
+- 错误信息会列出每个 `.js` 被跳过的原因
 
 ### 图标生成失败
 

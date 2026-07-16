@@ -27,6 +27,7 @@ class UserScriptMetadata:
     resource_urls: List[str]
     connect_urls: List[str]
     run_at: str
+    execution_world: str  # ISOLATED | MAIN
     icon_url: Optional[str]
     update_url: Optional[str]
     download_url: Optional[str]
@@ -85,6 +86,7 @@ class UserScriptParser:
             resource_urls=self._get_all_values(raw_metadata, "resource", []),
             connect_urls=self._get_all_values(raw_metadata, "connect", []),
             run_at=self._parse_run_at(raw_metadata),
+            execution_world=self._parse_execution_world(raw_metadata),
             icon_url=self._get_first_value(raw_metadata, "icon"),
             update_url=self._get_first_value(raw_metadata, "updateURL"),
             download_url=self._get_first_value(raw_metadata, "downloadURL"),
@@ -148,3 +150,22 @@ class UserScriptParser:
             if key in metadata:
                 return metadata[key][0]
         return "document-end"
+
+    def _parse_execution_world(self, metadata: Dict) -> str:
+        """解析 content_scripts.world：@world 或 @inject-into，默认 ISOLATED。"""
+        world = self._get_first_value(metadata, "world")
+        if world:
+            w = world.strip().upper()
+            if w in ("MAIN", "ISOLATED"):
+                return w
+
+        inject_into = self._get_first_value(metadata, "inject-into") or self._get_first_value(
+            metadata, "injectInto"
+        )
+        if inject_into:
+            v = inject_into.strip().lower()
+            if v in ("page", "main"):
+                return "MAIN"
+            if v in ("content", "isolated"):
+                return "ISOLATED"
+        return "ISOLATED"

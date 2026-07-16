@@ -70,8 +70,15 @@ def validate_store_readiness(metadata: UserScriptMetadata, script_dir: Path) -> 
 
     if metadata.resource_urls:
         logger.warning(
-            f"@resource is declared ({len(metadata.resource_urls)} entries) but not "
-            "bundled yet. GM_getResourceText/URL will not work until resources are packaged."
+            f"@resource is declared ({len(metadata.resource_urls)} entries) but not packaged. "
+            "GM_getResourceText / GM_getResourceURL are unsupported."
+        )
+
+    world = (metadata.execution_world or "ISOLATED").upper()
+    if world == "MAIN" and metadata.uses_gm_api():
+        logger.warning(
+            "MAIN world cannot use chrome.*; GM polyfills that need storage/runtime "
+            "will not work. Use ISOLATED with GM grants, or @grant none in MAIN."
         )
 
 

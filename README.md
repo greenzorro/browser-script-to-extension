@@ -85,6 +85,41 @@ Your script **must** include:
 - `@grant`: Declare used GM APIs (defaults to `none`).
 - `@require`: External libraries.
 - `@run-at`: Execution timing (default: `document-end`).
+- `@inject-into` / `@world`: Execution world (see below).
+
+### Capability Model
+
+This tool is a **Web Store packaging pipeline** with best-effort GM polyfills—not a full Tampermonkey runtime.
+
+| Path | Best for | Notes |
+|------|----------|-------|
+| **Recommended** | `@grant none` + DOM / `localStorage` | Closest to extension content scripts |
+| GM polyfills | `@grant GM.*` | Best-effort; see table below |
+| Page JS objects | CodeMirror, `window.App`, etc. | `@inject-into page` or `@world MAIN` |
+
+**Execution world**
+
+| Metadata | Chrome `content_scripts.world` | Use when |
+|----------|--------------------------------|----------|
+| (default) / `@inject-into content` / `@world ISOLATED` | `ISOLATED` | `chrome.*` / GM polyfills |
+| `@inject-into page` / `@world MAIN` | `MAIN` | Page JS objects (e.g. `element.CodeMirror`) |
+
+`MAIN` cannot use `chrome.*`. Do not combine `MAIN` with GM grants that need storage / tabs / XHR.
+
+**Storage**
+
+`GM_setValue` / `GM_getValue` / `GM.deleteValue` / `GM.listValues` return **Promises** (GM4-style / `chrome.storage.local`):
+
+```js
+// not supported (sync)
+const x = GM_getValue('k', 0);
+
+// supported
+const x = await GM_getValue('k', 0);
+// or: GM_getValue('k', 0).then(...)
+```
+
+For synchronous state, use `@grant none` and `localStorage`.
 
 ### Supported GM APIs
 
@@ -93,14 +128,16 @@ Both `GM_xxx` and `GM.xxx` `@grant` styles are accepted and normalized.
 | GM API | Polyfill Strategy |
 |--------|-------------------|
 | `GM_addStyle` / `GM.addStyle` | Injects `<style>` tag |
-| `GM.setValue` / `getValue` ... | Maps to `chrome.storage.local` |
-| `GM.xmlHttpRequest` | Wrapper around `fetch()` (real HTTP status) |
-| `GM.notification` | Via background service worker → `chrome.notifications` |
+| `GM.setValue` / `getValue` ... | **Async** `chrome.storage.local` (Promise) |
+| `GM.xmlHttpRequest` | Via background service worker → `fetch()` (CORS bypass with `host_permissions` / `@connect`) |
+| `GM.notification` | Via background → `chrome.notifications` |
 | `GM.setClipboard` | `navigator.clipboard` with fallback |
 | `GM.openInTab` | Via background → `chrome.tabs.create` |
 | `GM.download` | Via background → `chrome.downloads.download` |
 
-A `background.js` message bridge is generated when tabs/notifications/downloads are required.
+A `background.js` message bridge is generated when XHR / tabs / notifications / downloads are required.
+
+Not supported (or only warned): `unsafeWindow`, `@resource` / `GM_getResource*`, sync `GM_getValue`, binary XHR `responseType`, XHR abort across contexts.
 
 ### Asset Requirements
 
@@ -190,6 +227,7 @@ Create `store_assets/upload_config.json` in your project:
 - Verify the path.
 - Ensure the `.js` file has a valid `// ==UserScript==` header.
 - Check for UTF-8 encoding.
+- The error message lists why each `.js` file was skipped.
 
 **Icon Error**
 - Ensure `Pillow` is installed (`pip install Pillow`).

@@ -1,7 +1,5 @@
 """
-代码转换器
-处理UserScript代码，注入GM API polyfill；
-需要 background 的 API 通过 runtime 消息桥转发。
+代码转换器：注入 GM API polyfill；特权 API 经 background 消息桥。
 """
 
 from pathlib import Path
@@ -146,45 +144,35 @@ class CodeConverter:
             });
         };
     }""",
-            "GM_xmlHttpRequest": """    // GM_xmlHttpRequest / GM.xmlHttpRequest
+            "GM_xmlHttpRequest": """    // GM_xmlHttpRequest / GM.xmlHttpRequest (background fetch)
     if (typeof GM_xmlHttpRequest === 'undefined') {
         window.GM_xmlHttpRequest = function(details) {
-            const method = (details.method || 'GET').toUpperCase();
-            const controller = typeof AbortController !== 'undefined'
-                ? new AbortController() : null;
-            const init = {
-                method: method,
+            const payload = {
+                method: details.method,
+                url: details.url,
                 headers: details.headers || {},
-                body: details.data,
-                credentials: details.anonymous ? 'omit' : 'include',
+                data: details.data,
+                anonymous: !!details.anonymous,
+                timeout: details.timeout,
             };
-            if (controller) init.signal = controller.signal;
-
-            const promise = fetch(details.url, init)
-                .then(async (response) => {
-                    const responseText = await response.text();
-                    const headersObj = {};
-                    response.headers.forEach((v, k) => { headersObj[k] = v; });
-                    const result = {
-                        status: response.status,
-                        statusText: response.statusText,
-                        responseText: responseText,
-                        response: responseText,
-                        responseHeaders: Object.entries(headersObj)
-                            .map(([k, v]) => k + ': ' + v).join('\\r\\n'),
-                        finalUrl: response.url,
-                        readyState: 4,
-                    };
-                    if (details.onload) details.onload(result);
-                    return result;
-                })
-                .catch((error) => {
-                    if (details.onerror) details.onerror(error);
-                    throw error;
-                });
-
+            const promise = chrome.runtime.sendMessage({
+                type: 'GM_xmlHttpRequest',
+                details: payload,
+            }).then(function(response) {
+                if (!response || !response.ok) {
+                    const err = (response && response.error) || 'GM_xmlHttpRequest failed';
+                    if (details.onerror) details.onerror(err);
+                    throw err;
+                }
+                const result = response.result;
+                if (details.onload) details.onload(result);
+                return result;
+            }).catch(function(error) {
+                if (details.onerror) details.onerror(error);
+                throw error;
+            });
             return {
-                abort: function() { if (controller) controller.abort(); },
+                abort: function() {},
                 then: promise.then.bind(promise),
                 catch: promise.catch.bind(promise),
             };
@@ -292,6 +280,56 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
       }
     );
+    return true;
+  }
+
+  if (message.type === 'GM_xmlHttpRequest') {
+    const d = message.details || {};
+    const method = (d.method || 'GET').toUpperCase();
+    const init = {
+      method: method,
+      headers: d.headers || {},
+      body: d.data,
+      credentials: d.anonymous ? 'omit' : 'include',
+    };
+    let timedOut = false;
+    let timeoutId = null;
+    const controller = typeof AbortController !== 'undefined'
+      ? new AbortController() : null;
+    if (controller) init.signal = controller.signal;
+    if (d.timeout && controller) {
+      timeoutId = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, Number(d.timeout) || 0);
+    }
+    fetch(d.url, init)
+      .then(async (response) => {
+        if (timeoutId) clearTimeout(timeoutId);
+        const responseText = await response.text();
+        const headersObj = {};
+        response.headers.forEach((v, k) => { headersObj[k] = v; });
+        sendResponse({
+          ok: true,
+          result: {
+            status: response.status,
+            statusText: response.statusText,
+            responseText: responseText,
+            response: responseText,
+            responseHeaders: Object.entries(headersObj)
+              .map(([k, v]) => k + ': ' + v).join('\\r\\n'),
+            finalUrl: response.url,
+            readyState: 4,
+          },
+        });
+      })
+      .catch((error) => {
+        if (timeoutId) clearTimeout(timeoutId);
+        const msg = timedOut
+          ? 'timeout'
+          : (error && error.message) ? error.message : String(error);
+        sendResponse({ ok: false, error: msg });
+      });
     return true;
   }
 

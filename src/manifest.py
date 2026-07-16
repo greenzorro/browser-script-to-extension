@@ -44,6 +44,9 @@ class ManifestV3Generator:
             "js": self._get_js_files(),
             "run_at": self._get_run_at(),
         }
+        world = self._get_execution_world()
+        if world != "ISOLATED":
+            content_script["world"] = world
         if self.exclude_patterns:
             content_script["exclude_matches"] = self.exclude_patterns
 
@@ -129,6 +132,10 @@ class ManifestV3Generator:
             "document-idle": "document_idle",
         }
         return run_at_map.get(self.metadata.run_at, "document_end")
+
+    def _get_execution_world(self) -> str:
+        world = (self.metadata.execution_world or "ISOLATED").upper()
+        return world if world in ("MAIN", "ISOLATED") else "ISOLATED"
 
     def _get_js_files(self) -> List[str]:
         js_files = []
