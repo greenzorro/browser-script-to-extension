@@ -58,6 +58,7 @@ browser-script-to-extension/
     ├── manifest.json
     ├── content.js
     ├── background.js          # 按需
+    ├── dependencies.lock.json # @require URL / 文件名 / SHA-256
     ├── icons/
     └── lib/                   # @require
 ```
@@ -117,9 +118,12 @@ MV3 下 content script 的网络请求仍受页面 CORS 约束；特权跨域只
 ### 5.5 依赖下载 (`src/fetcher.py`)
 
 1. 从 URL 取文件名，冲突时 hash 后缀
-2. 每次构建都重新请求依赖，先写同目录临时文件，再原子替换 `extension/lib/` 中的目标文件
-3. 下载失败时保留已有文件，但构建仍 fail-fast，避免把旧依赖误报为当前下载结果
-4. 日志提示商店政策与无 SRI
+2. 成功下载后将 URL、文件名、SHA-256 写入 `extension/dependencies.lock.json`
+3. 默认仅复用“同 URL 且文件哈希匹配”的缓存；无网络时仍可稳定构建
+4. `--refresh-dependencies`、URL 变化、锁缺失或哈希不一致时重新下载
+5. 文件与锁均先写同目录临时文件，再原子替换；失败保留原文件并 fail-fast
+6. 锁中哈希只验证本地缓存，不等同于发布方提供的 SRI；日志保留政策提示
+7. `--clean` 删除整个输出目录及缓存，清理重建仍需联网
 
 ### 5.6 校验 (`src/validator.py`)
 
@@ -146,6 +150,7 @@ python build.py <script_dir>
 python build.py <script_dir> --clean
 python build.py <script_dir> --verbose
 python build.py <script_dir> --package
+python build.py <script_dir> --refresh-dependencies
 ```
 
 **脚本发现：** 扫描目录下 `.js`，含完整 UserScript 头尾即候选。
@@ -212,6 +217,7 @@ python build.py <script_dir> --package
 | 转换流程 | 已验证 |
 | 本地加载 | 已验证 |
 | Manifest V3 | 符合官方结构 |
+| 依赖缓存 | 自动测试覆盖复用、刷新、换源、篡改、迁移、失败保护与同名冲突 |
 
 ## 10. 依赖
 
@@ -229,7 +235,8 @@ Pillow>=10.0.0
 - `pip install Pillow`；存在 `store_assets/icon.png`
 
 **依赖下载失败**
-- 网络与 `@require` URL
+- 已验证缓存可离线复用
+- 首次下载或强制刷新时检查网络与 `@require` URL
 
 **详细日志**
 ```bash

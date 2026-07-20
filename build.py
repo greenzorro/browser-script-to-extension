@@ -67,7 +67,11 @@ def find_script_file(script_dir: Path) -> Path:
 
 
 def build_script(
-    script_dir: Path, clean: bool = False, verbose: bool = False, package: bool = False
+    script_dir: Path,
+    clean: bool = False,
+    verbose: bool = False,
+    package: bool = False,
+    refresh_dependencies: bool = False,
 ) -> bool:
     logger = logging.getLogger(__name__)
 
@@ -101,7 +105,9 @@ def build_script(
         lib_files = []
         if metadata.require_urls:
             fetcher = DependencyFetcher(lib_dir)
-            lib_files = fetcher.fetch_all(metadata.require_urls)
+            lib_files = fetcher.fetch_all(
+                metadata.require_urls, refresh=refresh_dependencies
+            )
 
         use_background = needs_background(metadata.grant_permissions)
         manifest_gen = ManifestV3Generator(
@@ -180,6 +186,7 @@ def main():
   python build.py /path/to/your/script-directory --clean
   python build.py /path/to/your/script-directory -v
   python build.py /path/to/your/script-directory --package
+  python build.py /path/to/your/script-directory --refresh-dependencies
         """,
     )
 
@@ -191,10 +198,21 @@ def main():
         action="store_true",
         help="打包extension为ZIP并打开上传页面（需要在store_assets/upload_config.json中配置）",
     )
+    parser.add_argument(
+        "--refresh-dependencies",
+        action="store_true",
+        help="忽略已验证的@require缓存并重新下载依赖",
+    )
 
     args = parser.parse_args()
     setup_logging(args.verbose)
-    success = build_script(args.script_dir, args.clean, args.verbose, args.package)
+    success = build_script(
+        args.script_dir,
+        args.clean,
+        args.verbose,
+        args.package,
+        args.refresh_dependencies,
+    )
     sys.exit(0 if success else 1)
 
 

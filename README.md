@@ -54,6 +54,9 @@ python build.py /path/to/project_root --verbose
 
 # Build and package (creates ZIP and opens upload pages)
 python build.py /path/to/project_root --package
+
+# Force a fresh download of all @require dependencies
+python build.py /path/to/project_root --refresh-dependencies
 ```
 
 ### Auto-Detection
@@ -153,9 +156,26 @@ Upon success, the `extension/` folder is ready for deployment:
 extension/
 ├── manifest.json      # Generated configuration
 ├── content.js         # Transpiled script with polyfills
+├── dependencies.lock.json # @require URL, filename, and cache hash
 ├── icons/             # Resized icons
 └── lib/               # Downloaded @require dependencies
 ```
+
+### Dependency Cache
+
+After the first successful download, each `@require` URL, output filename, and
+SHA-256 hash is recorded in `dependencies.lock.json`. Later builds reuse a file
+only when the URL is unchanged and its current hash still matches the lock.
+This keeps normal builds reproducible and allows them to work offline.
+
+Use `--refresh-dependencies` when you intentionally want to fetch the current
+remote content. A changed URL, a missing lock, or a hash mismatch also triggers
+a download. Failed downloads abort the build without replacing the previous
+dependency or lock file. The recorded hash validates the local cache; it is not
+publisher-provided SRI authenticity proof.
+
+`--clean` removes the whole `extension/` directory, including the dependency
+files and lock, so a clean rebuild requires network access.
 
 ## Testing in Chrome
 
@@ -234,8 +254,9 @@ Create `store_assets/upload_config.json` in your project:
 - Verify `store_assets/icon.png` exists.
 
 **Download Error**
-- Check internet connection.
-- Verify `@require` URLs are accessible.
+- A verified dependency cache can be reused without a network connection.
+- For a first download or `--refresh-dependencies`, check the connection and
+  verify that every `@require` URL is accessible.
 
 ---
 

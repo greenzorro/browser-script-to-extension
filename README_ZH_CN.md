@@ -52,6 +52,9 @@ python build.py /path/to/your/script-directory --verbose
 
 # 构建并打包（生成ZIP并打开上传页面）
 python build.py /path/to/your/script-directory --package
+
+# 强制重新下载全部 @require 依赖
+python build.py /path/to/your/script-directory --refresh-dependencies
 ```
 
 ### 自动检测脚本
@@ -154,12 +157,25 @@ const x = await GM_getValue('k', 0);
 extension/
 ├── manifest.json      # Chrome 扩展配置文件
 ├── content.js         # 转换后的脚本（包含 GM API polyfill）
+├── dependencies.lock.json # @require URL、文件名与缓存哈希
 ├── icons/             # 自动生成的多尺寸图标
 │   ├── icon16.png
 │   ├── icon48.png
 │   └── icon128.png
- └── lib/               # 外部依赖库（@require）
+└── lib/               # 外部依赖库（@require）
 ```
+
+### 依赖缓存
+
+首次下载成功后，工具会把每个 `@require` 的 URL、输出文件名和 SHA-256
+写入 `dependencies.lock.json`。后续构建只有在 URL 未变化且本地文件哈希与
+锁文件一致时才复用缓存，因此普通构建可复现，也可以离线完成。
+
+需要主动获取远端最新内容时使用 `--refresh-dependencies`。URL 变化、缺少
+锁文件或哈希不一致也会触发下载。下载失败会中止构建，但不会替换原有依赖
+和锁文件。锁文件中的哈希用于验证本地缓存，并不是发布方提供的 SRI 身份证明。
+
+`--clean` 会删除整个 `extension/`，包括依赖文件和锁，因此清理重建仍需要联网。
 
 ## 加载到 Chrome
 
@@ -243,8 +259,9 @@ python build.py /path/to/your/script-directory --package
 
 ### 依赖下载失败
 
-- 检查网络连接
-- 确认 `@require` URL 可访问
+- 已验证的依赖缓存可以在断网时直接复用
+- 首次下载或使用 `--refresh-dependencies` 时，请检查网络并确认所有
+  `@require` URL 均可访问
 
 ---
 
