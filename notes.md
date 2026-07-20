@@ -117,10 +117,9 @@ MV3 下 content script 的网络请求仍受页面 CORS 约束；特权跨域只
 ### 5.5 依赖下载 (`src/fetcher.py`)
 
 1. 从 URL 取文件名，冲突时 hash 后缀
-2. 已存在则复用
-3. `requests` 下载到 `extension/lib/`
-4. 失败 fail-fast
-5. 日志提示商店政策与无 SRI
+2. 每次构建都重新请求依赖，先写同目录临时文件，再原子替换 `extension/lib/` 中的目标文件
+3. 下载失败时保留已有文件，但构建仍 fail-fast，避免把旧依赖误报为当前下载结果
+4. 日志提示商店政策与无 SRI
 
 ### 5.6 校验 (`src/validator.py`)
 

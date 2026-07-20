@@ -6,6 +6,7 @@
 import hashlib
 import logging
 import re
+import tempfile
 from pathlib import Path
 from typing import List, Optional
 from urllib.parse import urlparse
@@ -82,22 +83,25 @@ class DependencyFetcher:
         filename = self._unique_filename(url, used_names)
         output_path = self.lib_dir / filename
 
-        # 仅当同 URL 对应文件已存在且名未被占用策略命中时复用
-        # 为避免错误复用同名不同源，冲突名总是重新下载到唯一文件
-        if output_path.exists() and filename not in used_names:
-            # 存在但可能是旧构建残留；仍允许复用同名文件（同一构建内 used_names 会阻止冲突）
-            logger.info(f"File already exists, reusing: {output_path.name}")
-            return filename
-
         logger.info(f"Downloading {url}...")
+        temp_path = None
         try:
             response = self.session.get(url, timeout=self.timeout)
             response.raise_for_status()
-            output_path.write_bytes(response.content)
+            self.lib_dir.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                dir=self.lib_dir, prefix=f".{filename}.", suffix=".download", delete=False
+            ) as temp_file:
+                temp_file.write(response.content)
+                temp_path = Path(temp_file.name)
+            temp_path.replace(output_path)
             return filename
-        except requests.RequestException as e:
+        except (requests.RequestException, OSError) as e:
             logger.error(f"Download failed for {url}: {e}")
             return None
+        finally:
+            if temp_path is not None and temp_path.exists():
+                temp_path.unlink()
 
     def clear(self):
         if self.lib_dir.exists():
