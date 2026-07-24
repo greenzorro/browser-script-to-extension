@@ -87,6 +87,8 @@ In the script project’s `store_assets/`:
 
 Created by [Victor42](https://victor42.work/) & [Agent Vik](https://github.com/agent-vik)
 
+---
+
 # For Agent
 
 Convert a Tampermonkey userscript folder into a Manifest V3 Chrome extension on this machine, then hand off store upload / daily use to the human.
