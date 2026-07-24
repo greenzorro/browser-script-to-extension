@@ -83,6 +83,20 @@ In the script project’s `store_assets/`:
 - One-time ~$5 Chrome Web Store developer fee
 - After the agent produces a ZIP, **you** submit listing text, privacy form, and screenshots in the developer console
 
+## Manual CLI
+
+You can run the same build yourself after dependencies are installed:
+
+```bash
+python build.py /path/to/project_root
+python build.py /path/to/project_root --clean
+python build.py /path/to/project_root --verbose
+python build.py /path/to/project_root --package
+python build.py /path/to/project_root --refresh-dependencies
+```
+
+`--package` needs `store_assets/upload_config.json` when you want ZIP + upload pages opened.
+
 ---
 
 Created by [Victor42](https://victor42.work/) & [Agent Vik](https://github.com/agent-vik)
@@ -91,7 +105,7 @@ Created by [Victor42](https://victor42.work/) & [Agent Vik](https://github.com/a
 
 # For Agent
 
-Convert a Tampermonkey userscript folder into a Manifest V3 Chrome extension on this machine, then hand off store upload / daily use to the human.
+Convert a Tampermonkey userscript folder into a Manifest V3 Chrome extension, and operate the CLI for rebuilds/packaging when asked.
 
 ## Prerequisites
 
@@ -99,7 +113,7 @@ Convert a Tampermonkey userscript folder into a Manifest V3 Chrome extension on 
 - Network access the first time you resolve `@require` URLs (or a warm dependency cache)
 - A target project folder that already contains a `.js` file with a `// ==UserScript==` header
 
-## Steps
+## Install / first-time setup
 
 1. Clone or locate this repo. From the repo root:
    ```bash
@@ -113,22 +127,36 @@ Convert a Tampermonkey userscript folder into a Manifest V3 Chrome extension on 
        ├── icon.png         # required for packaging / store
        └── screenshot*.png  # 1–5 for --package / Web Store
    ```
-3. Build:
-   ```bash
-   python build.py /path/to/project_root
-   ```
-   Useful flags: `--clean`, `--verbose`, `--package`, `--refresh-dependencies`.
-4. Verify: `project_root/extension/` exists with `manifest.json` and content scripts. For a local smoke test, tell the human to open `chrome://extensions`, enable Developer mode, and **Load unpacked** → `extension/`.
-5. If the human asked to publish: `python build.py /path/to/project_root --package` produces a ZIP and may open upload pages. Stop there—Chrome Web Store login, listing text, and submission are human tasks.
+
+## Usage
+
+Primary entrypoint: `python build.py <script_dir>`.
+
+| Flag | Purpose |
+|------|---------|
+| *(none)* | Build into `script_dir/extension/` |
+| `--clean` | Delete `extension/` then rebuild |
+| `-v` / `--verbose` | Verbose logs |
+| `--package` | ZIP + open upload URLs from `store_assets/upload_config.json` |
+| `--refresh-dependencies` | Re-download `@require` deps (ignore verified cache) |
+
+Typical flows:
+
+1. **Build once:** `python build.py /path/to/project_root` → verify `extension/manifest.json` exists.
+2. **Local load test:** tell the human to `chrome://extensions` → Developer mode → Load unpacked → `extension/`.
+3. **Iterate after script edits:** rebuild (add `--clean` if polyfills/deps look stale).
+4. **Publish packaging:** `python build.py /path/to/project_root --package`, then stop—store listing is human.
+
+Auto-detection: any `.js` under `script_dir` with `// ==UserScript==` is used; do not invent metadata.
 
 ## Hand off to the human
 
-- Loading the unpacked extension / Tampermonkey install confirmation in the browser
-- Web Store account, privacy questionnaire, and publish review
+- Approving Load unpacked / Tampermonkey prompts
+- Web Store account, privacy questionnaire, screenshots copy, publish review
 - Ongoing use of the resulting extension
 
 ## Red lines
 
-- Do not invent missing `@name` / `@description` / `@match` metadata; fix or ask
-- Do not commit downloaded `@require` caches as secrets; do not embed API keys
-- Maintainer architecture and capability boundaries live in `notes.md`—read it when the build fails for product-contract reasons, do not paste it into commits
+- Do not invent missing `@name` / `@description` / `@match`; fix or ask
+- Do not commit dependency caches as secrets; do not embed API keys
+- Product contracts / architecture: `notes.md`
