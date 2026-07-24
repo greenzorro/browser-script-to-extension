@@ -102,34 +102,37 @@ Convert a Tampermonkey userscript folder into a Manifest V3 Chrome extension, an
 ## Install / first-time setup
 
 1. Clone or locate this repo. From the repo root:
-   ```bash
-   pip install -r requirements.txt
-   ```
+
+```bash
+pip install -r requirements.txt
+```
+
 2. Confirm the target folder layout:
-   ```text
-   [project_root]/
-   ├── <script>.js          # must include ==UserScript==
-   └── store_assets/
-       ├── icon.png         # required for packaging / store
-       └── screenshot*.png  # 1–5 for --package / Web Store
-   ```
+
+```text
+project_root/
+├── script.js            # must include ==UserScript==
+└── store_assets/
+    ├── icon.png         # required for packaging / store
+    └── screenshot*.png  # 1–5 for --package / Web Store
+```
 
 ## Usage
 
-Primary entrypoint: `python build.py <script_dir>`.
+Primary entrypoint: `python build.py SCRIPT_DIR`.
 
-| Flag | Purpose |
-|------|---------|
-| *(none)* | Build into `script_dir/extension/` |
-| `--clean` | Delete `extension/` then rebuild |
-| `-v` / `--verbose` | Verbose logs |
-| `--package` | ZIP + open upload URLs from `store_assets/upload_config.json` |
-| `--refresh-dependencies` | Re-download `@require` deps (ignore verified cache) |
+Flags:
+
+- (none) — build into `SCRIPT_DIR/extension/`
+- `--clean` — delete `extension/` then rebuild
+- `-v` / `--verbose` — verbose logs
+- `--package` — ZIP + open upload URLs from `store_assets/upload_config.json`
+- `--refresh-dependencies` — re-download `@require` deps (ignore verified cache)
 
 Typical flows:
 
 1. **Build once:** `python build.py /path/to/project_root` → verify `extension/manifest.json` exists.
-2. **Local load test:** tell the human to `chrome://extensions` → Developer mode → Load unpacked → `extension/`.
+2. **Local load test:** tell the human to open `chrome://extensions` → Developer mode → Load unpacked → `extension/`.
 3. **Iterate after script edits:** rebuild (add `--clean` if polyfills/deps look stale).
 4. **Publish packaging:** `python build.py /path/to/project_root --package`, then stop—store listing is human.
 
