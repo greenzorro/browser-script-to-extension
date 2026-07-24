@@ -261,3 +261,49 @@ Create `store_assets/upload_config.json` in your project:
 ---
 
 Created by [Victor42](https://victor42.work/) & [Agent Vik](https://github.com/agent-vik)
+
+# For Agent
+
+Convert a Tampermonkey userscript folder into a Manifest V3 Chrome extension on this machine, then hand off store upload / daily use to the human.
+
+## Prerequisites
+
+- Python 3 with pip
+- Network access the first time you resolve `@require` URLs (or a warm dependency cache)
+- A target project folder that already contains a `.js` file with a `// ==UserScript==` header
+
+## Steps
+
+1. Clone or locate this repo. From the repo root:
+   ```bash
+   pip install -r requirements.txt
+   ```
+2. Confirm the target folder layout:
+   ```text
+   [project_root]/
+   ├── <script>.js          # must include ==UserScript==
+   └── store_assets/
+       ├── icon.png         # required for packaging / store
+       └── screenshot*.png  # 1–5 for --package / Web Store
+   ```
+3. Build:
+   ```bash
+   python build.py /path/to/project_root
+   ```
+   Useful flags: `--clean`, `--verbose`, `--package`, `--refresh-dependencies`.
+4. Verify: `project_root/extension/` exists with `manifest.json` and content scripts. For a local smoke test, tell the human to open `chrome://extensions`, enable Developer mode, and **Load unpacked** → `extension/`.
+5. If the human asked to publish: `python build.py /path/to/project_root --package` produces a ZIP and may open upload pages. Stop there—Chrome Web Store login, listing text, and submission are human tasks.
+
+## Hand off to the human
+
+- Loading the unpacked extension / Tampermonkey install confirmation in the browser
+- Web Store account, privacy questionnaire, and publish review
+- Ongoing use of the resulting extension
+
+## Red lines
+
+- Do not invent missing `@name` / `@description` / `@match` metadata; fix or ask
+- Do not commit downloaded `@require` caches as secrets; do not embed API keys
+- Maintainer architecture and capability boundaries live in `notes.md`—read it when the build fails for product-contract reasons, do not paste it into commits
+
+For Chinese readers, see [README_ZH_CN.md](README_ZH_CN.md) (human-facing only).
