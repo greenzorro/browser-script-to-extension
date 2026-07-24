@@ -10,64 +10,11 @@ Automatically convert Tampermonkey/GreaseMonkey scripts into Chrome Extensions (
 - **Ecosystem Benefits:** Native discovery, established trust, and automatic updates.
 - **Broader Reach:** Cross-platform distribution with trackable analytics.
 
-## Getting Started
+Ask an agent to build and package on your machine (see `# For Agent`). You prepare the **userscript + store assets**, then handle **Web Store listing / review** after the ZIP exists.
 
-### 1. Install Dependencies
+## Script requirements (for authors)
 
-```bash
-pip install -r requirements.txt
-```
-
-### 2. Directory Setup
-
-Structure your project folder as follows:
-
-```
-[project_root]/
-├── script.js                # Your script with ==UserScript== metadata
-├── store_assets/
-│   ├── icon.png             # Source icon (512x512+ recommended)
-│   ├── screenshot1.png      # Screenshot files (1-5 required)
-│   └── screenshot2.png      # Optional
-└── extension/               # Output directory (auto-generated)
-```
-
-### 3. Build
-
-```bash
-python build.py /path/to/project_root
-```
-
-## Usage
-
-### CLI Commands
-
-```bash
-# Build a script
-python build.py /path/to/project_root
-
-# Clean rebuild
-python build.py /path/to/project_root --clean
-
-# Verbose logging
-python build.py /path/to/project_root --verbose
-
-# Build and package (creates ZIP and opens upload pages)
-python build.py /path/to/project_root --package
-
-# Force a fresh download of all @require dependencies
-python build.py /path/to/project_root --refresh-dependencies
-```
-
-### Auto-Detection
-
-The tool scans the target directory for any `.js` file containing a `// ==UserScript==` block and uses it automatically.
-
-## Script Requirements
-
-### Minimal Metadata
-
-Your script **must** include:
+Your `.js` **must** include:
 
 ```javascript
 // ==UserScript==
@@ -76,21 +23,11 @@ Your script **must** include:
 // @description  Description (Required for Web Store)
 // @match        https://example.com/*
 // ==/UserScript==
-
-// Your code here...
 ```
 
-### Recommended Metadata
+Recommended: `@namespace`, `@author`, `@license`, `@grant` (default `none`), `@require`, `@run-at`, `@inject-into` / `@world`.
 
-- `@namespace`: Prevents ID conflicts.
-- `@author`: Your name.
-- `@license`: e.g., MIT.
-- `@grant`: Declare used GM APIs (defaults to `none`).
-- `@require`: External libraries.
-- `@run-at`: Execution timing (default: `document-end`).
-- `@inject-into` / `@world`: Execution world (see below).
-
-### Capability Model
+### Capability model
 
 This tool is a **Web Store packaging pipeline** with best-effort GM polyfills—not a full Tampermonkey runtime.
 
@@ -100,163 +37,51 @@ This tool is a **Web Store packaging pipeline** with best-effort GM polyfills—
 | GM polyfills | `@grant GM.*` | Best-effort; see table below |
 | Page JS objects | CodeMirror, `window.App`, etc. | `@inject-into page` or `@world MAIN` |
 
-**Execution world**
-
 | Metadata | Chrome `content_scripts.world` | Use when |
 |----------|--------------------------------|----------|
 | (default) / `@inject-into content` / `@world ISOLATED` | `ISOLATED` | `chrome.*` / GM polyfills |
-| `@inject-into page` / `@world MAIN` | `MAIN` | Page JS objects (e.g. `element.CodeMirror`) |
+| `@inject-into page` / `@world MAIN` | `MAIN` | Page JS objects |
 
 `MAIN` cannot use `chrome.*`. Do not combine `MAIN` with GM grants that need storage / tabs / XHR.
 
-**Storage**
-
-`GM_setValue` / `GM_getValue` / `GM.deleteValue` / `GM.listValues` return **Promises** (GM4-style / `chrome.storage.local`):
+`GM_setValue` / `GM_getValue` / `GM.deleteValue` / `GM.listValues` return **Promises** (not sync):
 
 ```js
-// not supported (sync)
-const x = GM_getValue('k', 0);
-
-// supported
 const x = await GM_getValue('k', 0);
-// or: GM_getValue('k', 0).then(...)
 ```
 
-For synchronous state, use `@grant none` and `localStorage`.
+For sync state, use `@grant none` and `localStorage`.
 
 ### Supported GM APIs
 
-Both `GM_xxx` and `GM.xxx` `@grant` styles are accepted and normalized.
+Both `GM_xxx` and `GM.xxx` `@grant` styles are accepted.
 
 | GM API | Polyfill Strategy |
 |--------|-------------------|
-| `GM_addStyle` / `GM.addStyle` | Injects `<style>` tag |
-| `GM.setValue` / `getValue` ... | **Async** `chrome.storage.local` (Promise) |
-| `GM.xmlHttpRequest` | Via background service worker → `fetch()` (CORS bypass with `host_permissions` / `@connect`) |
-| `GM.notification` | Via background → `chrome.notifications` |
-| `GM.setClipboard` | `navigator.clipboard` with fallback |
-| `GM.openInTab` | Via background → `chrome.tabs.create` |
-| `GM.download` | Via background → `chrome.downloads.download` |
-
-A `background.js` message bridge is generated when XHR / tabs / notifications / downloads are required.
+| `GM_addStyle` / `GM.addStyle` | Injects `<style>` |
+| `GM.setValue` / `getValue` … | **Async** `chrome.storage.local` |
+| `GM.xmlHttpRequest` | Background `fetch()` (+ `host_permissions` / `@connect`) |
+| `GM.notification` | `chrome.notifications` |
+| `GM.setClipboard` | `navigator.clipboard` + fallback |
+| `GM.openInTab` | `chrome.tabs.create` |
+| `GM.download` | `chrome.downloads.download` |
 
 Not supported (or only warned): `unsafeWindow`, `@resource` / `GM_getResource*`, sync `GM_getValue`, binary XHR `responseType`, XHR abort across contexts.
 
-### Asset Requirements
+### Store assets you should prepare
 
-Ensure `store_assets/` contains:
-- **`icon.png`**: Source icon. The tool generates 16, 48, and 128px versions automatically.
-- **Screenshot files**: 1 to 5 images in `.png` or `.jpg` format (placed directly in `store_assets/` directory).
+In the script project’s `store_assets/`:
 
-## Output Structure
+- **`icon.png`** (source; tool generates 16/48/128)
+- **1–5 screenshots** (`.png` / `.jpg`)
 
-Upon success, the `extension/` folder is ready for deployment:
+### Publishing notes (human / store)
 
-```
-extension/
-├── manifest.json      # Generated configuration
-├── content.js         # Transpiled script with polyfills
-├── dependencies.lock.json # @require URL, filename, and cache hash
-├── icons/             # Resized icons
-└── lib/               # Downloaded @require dependencies
-```
-
-### Dependency Cache
-
-After the first successful download, each `@require` URL, output filename, and
-SHA-256 hash is recorded in `dependencies.lock.json`. Later builds reuse a file
-only when the URL is unchanged and its current hash still matches the lock.
-This keeps normal builds reproducible and allows them to work offline.
-
-Use `--refresh-dependencies` when you intentionally want to fetch the current
-remote content. A changed URL, a missing lock, or a hash mismatch also triggers
-a download. Failed downloads abort the build without replacing the previous
-dependency or lock file. The recorded hash validates the local cache; it is not
-publisher-provided SRI authenticity proof.
-
-`--clean` removes the whole `extension/` directory, including the dependency
-files and lock, so a clean rebuild requires network access.
-
-## Testing in Chrome
-
-1. Go to `chrome://extensions/`.
-2. Enable **Developer mode** (top right).
-3. Click **Load unpacked**.
-4. Select the `extension/` folder.
-
-## Publishing to Web Store
-
-### Requirements
-- **Name:** Max 75 characters.
-- **Description:** Cannot be empty, max 132 characters.
-- **Screenshots:** 1-5 required.
-- **Version:** SemVer format (x.y.z) recommended.
-
-### Important Notes
-- Avoid `<all_urls>` permission if possible; specific patterns pass review faster.
-- Remote code (`@require`) must align with Store policies.
-- A one-time $5 developer registration fee applies.
-
-## Packaging
-
-### Quick Package
-
-The tool can automatically package your extension and open store upload pages:
-
-```bash
-python build.py /path/to/project_root --package
-```
-
-### Upload Configuration
-
-Create `store_assets/upload_config.json` in your project:
-
-```json
-{
-  "zip_filename": "My Extension",
-  "output_path": "~/Downloads",
-  "upload_urls": [
-    "https://chrome.google.com/webstore/devconsole/xxx/edit/package",
-    "https://partner.microsoft.com/.../packages"
-  ]
-}
-```
-
-**Field Reference:**
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `zip_filename` | Optional | ZIP filename (without .zip), defaults to script filename |
-| `output_path` | Optional | Output path (see path format below) |
-| `upload_urls` | Required | Array of upload page URLs |
-
-**Path Format:**
-- **Cross-platform recommended**: `~/Downloads` (expands to user home directory)
-- **Relative path**: `../releases`
-- **Absolute path**: Always use forward slashes `/`, works on Windows too (e.g., `C:/Users/xxx/Downloads`)
-- ❌ Don't use backslashes `\` (requires escaping in JSON, not cross-platform)
-
-**Default Behavior:**
-
-- Without config: Uses script filename for ZIP, outputs to project root, skips opening pages
-- WSL environment: Prints URLs instead of opening browser
-
-## Troubleshooting
-
-**Script Not Found**
-- Verify the path.
-- Ensure the `.js` file has a valid `// ==UserScript==` header.
-- Check for UTF-8 encoding.
-- The error message lists why each `.js` file was skipped.
-
-**Icon Error**
-- Ensure `Pillow` is installed (`pip install Pillow`).
-- Verify `store_assets/icon.png` exists.
-
-**Download Error**
-- A verified dependency cache can be reused without a network connection.
-- For a first download or `--refresh-dependencies`, check the connection and
-  verify that every `@require` URL is accessible.
+- Name ≤ 75 chars; description required ≤ 132 chars; SemVer `x.y.z` recommended
+- Prefer specific `@match` over `<all_urls>` for review speed
+- Remote `@require` must comply with Store policies
+- One-time ~$5 Chrome Web Store developer fee
+- After the agent produces a ZIP, **you** submit listing text, privacy form, and screenshots in the developer console
 
 ---
 
