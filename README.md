@@ -83,20 +83,6 @@ In the script project’s `store_assets/`:
 - One-time ~$5 Chrome Web Store developer fee
 - After the agent produces a ZIP, **you** submit listing text, privacy form, and screenshots in the developer console
 
-## Manual CLI
-
-You can run the same build yourself after dependencies are installed:
-
-```bash
-python build.py /path/to/project_root
-python build.py /path/to/project_root --clean
-python build.py /path/to/project_root --verbose
-python build.py /path/to/project_root --package
-python build.py /path/to/project_root --refresh-dependencies
-```
-
-`--package` needs `store_assets/upload_config.json` when you want ZIP + upload pages opened.
-
 ---
 
 Created by [Victor42](https://victor42.work/) & [Agent Vik](https://github.com/agent-vik)

@@ -83,20 +83,6 @@ const x = await GM_getValue('k', 0);
 - Chrome Web Store 一次性约 $5 开发者注册费
 - Agent 打出 ZIP 后，**由你**在开发者控制台提交介绍文案、隐私问卷与截图
 
-## 手动命令行
-
-依赖装好后，你也可以自己跑同样的构建：
-
-```bash
-python build.py /path/to/project_root
-python build.py /path/to/project_root --clean
-python build.py /path/to/project_root --verbose
-python build.py /path/to/project_root --package
-python build.py /path/to/project_root --refresh-dependencies
-```
-
-`--package` 需要 `store_assets/upload_config.json` 才会打 ZIP 并打开上传页。
-
 ---
 
 Created by [Victor42](https://victor42.work/) & [Agent Vik](https://github.com/agent-vik)
