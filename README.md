@@ -10,9 +10,9 @@ Automatically convert Tampermonkey/GreaseMonkey scripts into Chrome Extensions (
 - **Ecosystem Benefits:** Native discovery, established trust, and automatic updates.
 - **Broader Reach:** Cross-platform distribution with trackable analytics.
 
-Ask an agent to build and package on your machine (see `# For Agent`). You prepare the **userscript + store assets**, then handle **Web Store listing / review** after the ZIP exists.
+Prepare the userscript and store assets; an agent builds and packages on your machine. You finish Web Store listing and review once the ZIP is ready.
 
-## Script requirements (for authors)
+## Script requirements
 
 Your `.js` **must** include:
 
@@ -75,13 +75,13 @@ In the script project’s `store_assets/`:
 - **`icon.png`** (source; tool generates 16/48/128)
 - **1–5 screenshots** (`.png` / `.jpg`)
 
-### Publishing notes (human / store)
+### Publishing notes
 
 - Name ≤ 75 chars; description required ≤ 132 chars; SemVer `x.y.z` recommended
 - Prefer specific `@match` over `<all_urls>` for review speed
 - Remote `@require` must comply with Store policies
 - One-time ~$5 Chrome Web Store developer fee
-- After the agent produces a ZIP, **you** submit listing text, privacy form, and screenshots in the developer console
+- After the ZIP exists, submit listing text, privacy form, and screenshots in the developer console
 
 ---
 
