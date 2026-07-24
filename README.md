@@ -130,5 +130,3 @@ Convert a Tampermonkey userscript folder into a Manifest V3 Chrome extension on 
 - Do not invent missing `@name` / `@description` / `@match` metadata; fix or ask
 - Do not commit downloaded `@require` caches as secrets; do not embed API keys
 - Maintainer architecture and capability boundaries live in `notes.md`—read it when the build fails for product-contract reasons, do not paste it into commits
-
-For Chinese readers, see [README_ZH_CN.md](README_ZH_CN.md) (human-facing only).
